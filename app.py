@@ -15,6 +15,8 @@ from typing import Any, Dict, Generator, List, Optional, Tuple
 
 import gradio as gr
 from PIL import Image
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 from unicalli_core import (
     SYNTHETIC_AUTHOR,
@@ -966,6 +968,42 @@ _health_app = demo.app
 @_health_app.get("/api/health")
 def _health():
     return {"status": "ok", "service": "unicalli", "ui": "v4"}
+
+
+# 子路径部署（Tailscale Funnel /unicalli）下 gradio 前端问题与修复：
+# 1) URL 无尾斜杠时相对路径 "./assets/" 会解析到根路径（打到 Funnel 根 → Plane）
+#    → 注入脚本把 /unicalli 301 到 /unicalli/，尾斜杠后相对路径全部正确
+# 2) api_prefix 硬编码绝对路径 "/gradio_api" → 动态改写为基于当前路径
+#    （公网 /unicalli/gradio_api、本地根路径 /gradio_api）
+_PREFIX_SCRIPT = (
+    "<script>(function(){"
+    "var p=location.pathname||'';"
+    "if(p&&p!=='/'&&p.charAt(p.length-1)!=='/'){location.replace(location.href+'/');return;}"
+    "var b=p.replace(/\\/+$/,'');"
+    "if(window.gradio_config){window.gradio_config.api_prefix=b+'/gradio_api';}"
+    "})();</script>"
+)
+
+
+class _InjectApiPrefixMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        ctype = response.headers.get("content-type", "")
+        if request.method == "GET" and response.status_code == 200 and "text/html" in ctype:
+            chunks = []
+            async for chunk in response.body_iterator:
+                chunks.append(chunk)
+            text = b"".join(chunks).decode("utf-8", errors="replace")
+            if "gradio_config" in text and "</head>" in text:
+                text = text.replace("</head>", _PREFIX_SCRIPT + "</head>", 1)
+                payload = text.encode("utf-8")
+                headers = dict(response.headers)
+                headers["content-length"] = str(len(payload))
+                return Response(content=payload, status_code=200, headers=headers, media_type="text/html")
+        return response
+
+
+demo.app.add_middleware(_InjectApiPrefixMiddleware)
 
 
 # uvicorn 直启绕过 launch()，且 gradio 6.3.0 前端不会自动调用 /startup-events。
