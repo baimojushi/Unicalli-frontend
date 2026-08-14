@@ -11,6 +11,8 @@
 English | [简体中文](README_zh.md)
 
 > **About this repository**: This is a local-deployment adaptation of the official [EnVision-Research/UniCalli](https://github.com/EnVision-Research/UniCalli), with Windows dual-RTX-3090 inference adaptations (quantized caches / dual-GPU full-precision splitting / offline loading) and a full-width horizontal-scroll Gradio frontend. **Model weights are NOT distributed with this repo** — download them from the official sources below (see "Download Models").
+>
+> **License**: This repository is licensed under [CC BY-NC-ND 4.0](LICENSE) (Attribution-NonCommercial-NoDerivatives) — **no commercial use, no modification/derivative works**. Model weights remain available from the official sources and are unaffected by this license.
 
 <p align="center">
   <img src="docs/assets/demo.png" alt="UniCalli Demo" width="800">

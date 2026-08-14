@@ -11,6 +11,8 @@
 [English](README.md) | 简体中文
 
 > **本仓库说明**：本仓库是官方 [EnVision-Research/UniCalli](https://github.com/EnVision-Research/UniCalli) 的本地部署适配版本，包含 Windows 双 RTX 3090 环境下的推理适配（量化缓存 / 双卡全精度拆分 / 离线加载）与一套近全屏横向长卷的 Gradio 前端。**模型权重不随仓库分发**，请从官方渠道下载（见下方"下载模型"）。
+>
+> **许可证**：本仓库按 [CC BY-NC-ND 4.0](LICENSE)（署名-非商业使用-禁止演绎）授权——**禁止商用、禁止修改/分发衍生作品**。模型权重仍从官方渠道获取，不受本许可影响。
 
 <p align="center">
   <img src="docs/assets/demo.png" alt="UniCalli Demo" width="800">
