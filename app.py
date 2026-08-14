@@ -970,17 +970,16 @@ def _health():
     return {"status": "ok", "service": "unicalli", "ui": "v4"}
 
 
-# 子路径部署（Tailscale Funnel /unicalli）下 gradio 前端问题与修复：
-# 1) URL 无尾斜杠时相对路径 "./assets/" 会解析到根路径（打到 Funnel 根 → Plane）
-#    → 注入脚本把 /unicalli 301 到 /unicalli/，尾斜杠后相对路径全部正确
-# 2) api_prefix 硬编码绝对路径 "/gradio_api" → 动态改写为基于当前路径
-#    （公网 /unicalli/gradio_api、本地根路径 /gradio_api）
+# 子路径部署（Tailscale Funnel /unicalli）下的唯一问题是：
+# URL 无尾斜杠时 gradio 相对路径 "./assets/" 会解析到根路径（打到 Funnel
+# 根 → Plane）→ 注入脚本把 /unicalli 301 到 /unicalli/ 即可。
+# 注意：不能改 api_prefix——gradio 后端已从请求正确推断 root（含 /unicalli），
+# 前端 URL = root + api_prefix(/gradio_api) 已正确；注入 api_prefix 会导致
+# root + 注入值 双前缀/畸形 URL（实测 404/405）。
 _PREFIX_SCRIPT = (
     "<script>(function(){"
     "var p=location.pathname||'';"
-    "if(p&&p!=='/'&&p.charAt(p.length-1)!=='/'){location.replace(location.href+'/');return;}"
-    "var b=p.replace(/\\/+$/,'');"
-    "if(window.gradio_config){window.gradio_config.api_prefix=b+'/gradio_api';}"
+    "if(p&&p!=='/'&&p.charAt(p.length-1)!=='/'){location.replace(location.href+'/');}"
     "})();</script>"
 )
 
