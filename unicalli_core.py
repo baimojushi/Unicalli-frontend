@@ -763,7 +763,7 @@ def compose_seamless_scroll(
     canvas_width = sum(image.width for image in normalized) - overlap * (len(normalized) - 1)
 
     if background_mode == "砚黑":
-        background = (24, 21, 18)
+        background = (20, 18, 15)
         metal_ink = (214, 199, 166)
         canvas = Image.new("RGB", (max(1, canvas_width), target_height), background)
         x = 0

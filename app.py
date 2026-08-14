@@ -626,7 +626,7 @@ with gr.Blocks(
             <span class="topbar-seal" aria-hidden="true">翰</span>
             <span class="topbar-title">
               <strong>UniCalli</strong>
-              <small>数字书法长卷</small>
+              <small>数字长卷</small>
             </span>
           </div>
           <div id="run-timer" aria-live="polite">
@@ -666,7 +666,7 @@ with gr.Blocks(
             with gr.Row(elem_classes=["composer-main-row"]):
                 text_input = gr.Textbox(
                     value=INITIAL_TEXT,
-                    placeholder="题写文字，每五字一段",
+                    placeholder="题写汉字，每五字自动成段",
                     label="题写内容",
                     show_label=False,
                     lines=2,

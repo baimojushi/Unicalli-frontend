@@ -22,7 +22,7 @@
   --serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", STSong, serif;
   --sans: "Inter", "Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif;
   --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
-  --topbar-height: 56px;
+  --topbar-height: 64px;
   --art-height: clamp(250px, 56vh, 580px);
 }
 

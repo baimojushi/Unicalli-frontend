@@ -41,9 +41,9 @@ def render_stage_shell() -> str:
     <div class="scroll-stage-shell" data-stage-state="empty"
          tabindex="0" role="region" aria-label="书法横向长卷">
       <div class="stage-empty-copy">
-        <span class="stage-empty-index">UNICALLI · 数字长卷</span>
-        <strong>长卷待题</strong>
-        <p>题写后，墨迹自右向左续入卷中。</p>
+        <span class="stage-empty-index">横卷 · 右起左展</span>
+        <strong>静候落笔</strong>
+        <p>输入汉字后落笔，墨迹将从右向左连续铺展。</p>
       </div>
       <div id="scroll-track" class="scroll-track is-empty" aria-live="polite"></div>
     </div>
