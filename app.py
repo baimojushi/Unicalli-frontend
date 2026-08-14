@@ -1,293 +1,929 @@
 # -*- coding: utf-8 -*-
+"""UniCalli · persistent horizontal digital scroll workspace.
+
+The scroll DOM is mounted once. Python emits small segment events, while the
+browser updates only the active segment. Completed images remain server-side.
 """
-Gradio Demo for Chinese Calligraphy Generation
-"""
+from __future__ import annotations
+
+import threading
+import time
+import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
 import gradio as gr
-from inference import CalligraphyGenerator
-import json
-import csv
+from PIL import Image
 
-# Load author and font mappings from CSV
-def load_author_fonts_from_csv(csv_path):
-    """
-    Load author and their available fonts from CSV file
-    Filters out authors that only support 隶 or 篆 fonts
-    Returns: dict mapping author to list of font styles
-    """
-    author_fonts = {}
-    excluded_fonts = {'隶', '篆'}  # Fonts we don't support
-    
-    with open(csv_path, 'r', encoding='utf-8') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            author = row['书法家']
-            fonts = row['字体类型'].split('|')  # Split multiple fonts by |
-            
-            # Filter out unsupported fonts (隶 and 篆)
-            supported_fonts = [f for f in fonts if f not in excluded_fonts]
-            
-            # Only include author if they have at least one supported font
-            if supported_fonts:
-                author_fonts[author] = supported_fonts
-    
-    return author_fonts
-
-# Load author-font mappings
-AUTHOR_FONTS = load_author_fonts_from_csv('dataset/author_fonts_summary.csv')
-
-# Available authors (sorted)
-AUTHOR_LIST = sorted(AUTHOR_FONTS.keys())
-
-# Font style display names (only supported styles)
-FONT_STYLE_NAMES = {
-    "楷": "楷 (Regular Script)",
-    "行": "行 (Running Script)", 
-    "草": "草 (Cursive Script)"
-}
-
-# Load author descriptions if available
-try:
-    with open('dataset/calligraphy_styles_en.json', 'r', encoding='utf-8') as f:
-        author_styles = json.load(f)
-except:
-    author_styles = {}
-
-# Initialize generator (will be done lazily on first generation)
-generator = None
-generator_4bit_state = None  # Track current 4bit quantization state
+from unicalli_core import (
+    SYNTHETIC_AUTHOR,
+    GenerationRequest,
+    GeneratorService,
+    SegmentTask,
+    compose_seamless_scroll,
+    font_choices_for_author,
+    load_project_data,
+    split_text_into_segments,
+    widen_image,
+)
+from unicalli_ui import (
+    author_tag_value,
+    favorite_button_label,
+    image_to_data_uri,
+    load_asset_text,
+    normalize_preferences,
+    ordered_author_choices,
+    render_author_preference_summary,
+    render_draft_strip,
+    render_stage_shell,
+    segment_payloads,
+)
 
 
-def init_generator(use_4bit: bool = False):
-    """Initialize the generator (lazy loading)"""
-    global generator, generator_4bit_state
-    
-    # Reinitialize if 4bit state changed
-    if generator is not None and generator_4bit_state != use_4bit:
-        generator = None
-    
-    if generator is None:
-        # Model paths (download via: huggingface-cli download TSXu/UniCalli-base --local-dir ./checkpoints)
-        checkpoint_path = "./checkpoints/unicalli-base_cleaned.bin"
-        intern_vlm_path = "./checkpoints/internvl_embedding"
-        
-        generator = CalligraphyGenerator(
-            model_name="flux-dev",
-            device="cuda",
-            offload=False,
-            intern_vlm_path=intern_vlm_path,
-            checkpoint_path=checkpoint_path,
-            font_descriptions_path='dataset/chirography.json',
-            author_descriptions_path='dataset/calligraphy_styles_en.json',
-            use_deepspeed=False,
-            use_4bit_quantization=use_4bit,
-            # deepspeed_config="ds_config_zero2.json"
+BASE_DIR = Path(__file__).resolve().parent
+EXPORT_DIR = BASE_DIR / ".unicalli_exports"
+EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+PROJECT = load_project_data(BASE_DIR)
+AUTHOR_LIST = PROJECT.author_list
+GENERATOR_SERVICE = GeneratorService(BASE_DIR)
+CSS = load_asset_text("unicalli_ui.css")
+INTERACTIONS_JS = load_asset_text("unicalli_ui.js")
+
+GRADIO_MAJOR = int(gr.__version__.split(".", 1)[0])
+BLOCKS_STYLE_KWARGS = {"css": CSS} if GRADIO_MAJOR < 6 else {}
+
+INITIAL_AUTHOR = (
+    "黄庭坚"
+    if "黄庭坚" in PROJECT.author_fonts
+    else (AUTHOR_LIST[0] if AUTHOR_LIST else SYNTHETIC_AUTHOR)
+)
+INITIAL_TEXT = "山川异域风月同天"
+INITIAL_FONT_CHOICES = font_choices_for_author(INITIAL_AUTHOR, PROJECT.author_fonts)
+DEFAULT_PREFERENCES: Dict[str, Any] = {"favorites": [], "tags": {}}
+
+SESSION_TTL_SECONDS = 2 * 60 * 60
+MAX_SCROLL_SESSIONS = 32
+
+
+@dataclass
+class ScrollSession:
+    session_id: str
+    segments: List[SegmentTask]
+    images: List[Optional[Image.Image]]
+    original_request: GenerationRequest
+    base_seed: int
+    segment_seeds: List[Optional[int]]
+    background_mode: str
+    busy: bool = True
+    revision: int = 0
+    updated_at: float = field(default_factory=time.time)
+
+
+SESSION_STORE: Dict[str, ScrollSession] = {}
+SESSION_LOCK = threading.RLock()
+
+
+def _cleanup_sessions() -> None:
+    now = time.time()
+    with SESSION_LOCK:
+        expired = [
+            session_id
+            for session_id, session in SESSION_STORE.items()
+            if not session.busy and now - session.updated_at > SESSION_TTL_SECONDS
+        ]
+        for session_id in expired:
+            SESSION_STORE.pop(session_id, None)
+
+        if len(SESSION_STORE) <= MAX_SCROLL_SESSIONS:
+            return
+
+        candidates = sorted(
+            (session for session in SESSION_STORE.values() if not session.busy),
+            key=lambda item: item.updated_at,
         )
-        generator_4bit_state = use_4bit
-    return generator
+        for session in candidates[: max(0, len(SESSION_STORE) - MAX_SCROLL_SESSIONS)]:
+            SESSION_STORE.pop(session.session_id, None)
 
 
-def update_font_choices(author: str):
-    """
-    Update available font choices based on selected author
-    
-    Args:
-        author: Selected author name
-        
-    Returns:
-        Updated dropdown with available fonts for the author
-    """
-    if author == "None (Synthetic / 合成风格)" or author not in AUTHOR_FONTS:
-        # If no author or synthetic, show all font types
-        choices = list(FONT_STYLE_NAMES.values())
+def _new_session(
+    request: GenerationRequest,
+    segments: List[SegmentTask],
+    background_mode: str,
+) -> ScrollSession:
+    _cleanup_sessions()
+    session = ScrollSession(
+        session_id=uuid.uuid4().hex,
+        segments=segments,
+        images=[None] * len(segments),
+        original_request=request,
+        base_seed=int(request.seed),
+        segment_seeds=[None] * len(segments),
+        background_mode=background_mode,
+    )
+    with SESSION_LOCK:
+        SESSION_STORE[session.session_id] = session
+    return session
+
+
+def _get_session(session_id: Any) -> ScrollSession:
+    key = str(session_id or "").strip()
+    with SESSION_LOCK:
+        session = SESSION_STORE.get(key)
+        if session is None:
+            raise gr.Error("这幅长卷已过期，请另题一卷。")
+        session.updated_at = time.time()
+        return session
+
+
+def _completed_indices(session: ScrollSession) -> List[int]:
+    return [index for index, image in enumerate(session.images) if image is not None]
+
+
+def _seed_summary(session: ScrollSession) -> str:
+    overrides: List[str] = []
+    for index, seed_value in enumerate(session.segment_seeds):
+        default_seed = int(session.base_seed) + index
+        if seed_value is None or int(seed_value) == default_seed:
+            continue
+        overrides.append(f"{index + 1:02d}:{int(seed_value)}")
+    suffix = " · 各段种子依次递增"
+    if overrides:
+        return f"基础 Seed {session.base_seed}{suffix} · 重写段 {' / '.join(overrides)}"
+    return f"基础 Seed {session.base_seed}{suffix}"
+
+
+def _next_event(session: ScrollSession, kind: str, **payload: Any) -> Dict[str, Any]:
+    with SESSION_LOCK:
+        session.revision += 1
+        session.updated_at = time.time()
+        return {
+            "kind": kind,
+            "session_id": session.session_id,
+            "revision": session.revision,
+            **payload,
+        }
+
+
+def _export_path(session: ScrollSession, image: Image.Image, seed: int) -> str:
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    path = EXPORT_DIR / (
+        f"unicalli-{session.session_id[:8]}-r{session.revision}-"
+        f"{timestamp}-seed-{seed}.png"
+    )
+    image.save(path, format="PNG")
+    return str(path)
+
+
+def _export_session(session: ScrollSession, seed: int) -> Optional[str]:
+    if not session.images or any(image is None for image in session.images):
+        return None
+    completed = [image for image in session.images if image is not None]
+    export_mode = "墨黑" if session.background_mode == "砚黑" else session.background_mode
+    scroll = compose_seamless_scroll(completed, export_mode)
+    return _export_path(session, scroll, seed) if scroll is not None else None
+
+
+def _download_update(path: Optional[str]):
+    return gr.DownloadButton(value=path, visible=bool(path))
+
+
+def _is_han_character(character: str) -> bool:
+    if not character:
+        return False
+    code = ord(character)
+    return (
+        0x3400 <= code <= 0x4DBF
+        or 0x4E00 <= code <= 0x9FFF
+        or 0xF900 <= code <= 0xFAFF
+        or 0x20000 <= code <= 0x2FA1F
+        or 0x30000 <= code <= 0x323AF
+    )
+
+
+def sanitize_han_text(text: str) -> str:
+    """Silently discard every input character that is not a Han ideograph."""
+    return "".join(character for character in str(text or "") if _is_han_character(character))
+
+
+def preview_text(text: str) -> str:
+    return render_draft_strip(split_text_into_segments(sanitize_han_text(text)))
+
+
+def _author_component_updates(author: str, preferences: Any):
+    choices = font_choices_for_author(author, PROJECT.author_fonts)
+    is_synthetic = author == SYNTHETIC_AUTHOR
+    return (
+        gr.Dropdown(choices=choices, value=choices[0] if choices else None),
+        gr.Button(
+            value="合成风格" if is_synthetic else favorite_button_label(author, preferences),
+            interactive=not is_synthetic,
+        ),
+        gr.Textbox(
+            value="" if is_synthetic else author_tag_value(author, preferences),
+            interactive=not is_synthetic,
+        ),
+    )
+
+
+def author_change(author: str, preferences: Any):
+    return _author_component_updates(author, preferences)
+
+
+def filter_author_controls(
+    favorites_only: bool,
+    preferences: Any,
+    current_author: str,
+):
+    choices = ordered_author_choices(AUTHOR_LIST, preferences, favorites_only)
+    selected = current_author if current_author in choices else choices[0]
+    font_update, favorite_update, tag_update = _author_component_updates(
+        selected, preferences
+    )
+    return (
+        gr.Dropdown(choices=choices, value=selected),
+        font_update,
+        favorite_update,
+        tag_update,
+    )
+
+
+def toggle_author_favorite(
+    author: str,
+    preferences: Any,
+    favorites_only: bool,
+):
+    prefs = normalize_preferences(preferences)
+
+    if author != SYNTHETIC_AUTHOR:
+        favorites = list(prefs["favorites"])
+        if author in favorites:
+            favorites.remove(author)
+        else:
+            favorites.insert(0, author)
+        prefs["favorites"] = favorites
+
+    choices = ordered_author_choices(AUTHOR_LIST, prefs, favorites_only)
+    selected = author if author in choices else choices[0]
+    font_update, favorite_update, tag_update = _author_component_updates(
+        selected, prefs
+    )
+    return (
+        prefs,
+        render_author_preference_summary(prefs),
+        gr.Dropdown(choices=choices, value=selected),
+        font_update,
+        favorite_update,
+        tag_update,
+    )
+
+
+def save_author_tag(author: str, tag: str, preferences: Any):
+    prefs = normalize_preferences(preferences)
+    if author == SYNTHETIC_AUTHOR:
+        return (
+            prefs,
+            render_author_preference_summary(prefs),
+            gr.Textbox(value="", interactive=False),
+        )
+
+    clean_tag = (tag or "").strip()[:18]
+    tags = dict(prefs["tags"])
+    if clean_tag:
+        tags[author] = clean_tag
     else:
-        # Show only fonts available for this author
-        available_fonts = AUTHOR_FONTS[author]
-        choices = [FONT_STYLE_NAMES[font] for font in available_fonts if font in FONT_STYLE_NAMES]
-    
-    # Return updated dropdown with first choice as default
-    return gr.Dropdown(choices=choices, value=choices[0] if choices else None)
+        tags.pop(author, None)
+    prefs["tags"] = tags
+    return (
+        prefs,
+        render_author_preference_summary(prefs),
+        gr.Textbox(value=clean_tag),
+    )
 
 
-def generate_calligraphy(
+def initialize_preferences(preferences: Any, current_author: str):
+    prefs = normalize_preferences(preferences)
+    choices = ordered_author_choices(AUTHOR_LIST, prefs, False)
+    selected = current_author if current_author in choices else choices[0]
+    _, favorite_update, tag_update = _author_component_updates(selected, prefs)
+    return (
+        gr.Dropdown(choices=choices, value=selected),
+        favorite_update,
+        tag_update,
+        render_author_preference_summary(prefs),
+    )
+
+
+def generation_ui_stream(
     text: str,
     author_dropdown: str,
     font_style: str,
     num_steps: int,
     seed: int,
     random_seed: bool,
-    use_4bit: bool
-):
-    """
-    Generate calligraphy based on user inputs
-    
-    Args:
-        text: Input text (must be 5 characters)
-        author_dropdown: Selected author from dropdown
-        font_style: Selected font style (display name)
-        num_steps: Number of denoising steps
-        seed: Random seed
-        random_seed: Whether to use random seed
-        use_4bit: Whether to use 4-bit quantization
-    
-    Returns:
-        Generated image and condition image
-    """
-    # Validate text
-    if len(text) != 5:
-        raise gr.Error(f"文本必须是5个字符 / Text must be 5 characters. Current: {len(text)}")
-    
-    # Extract font style value from display name
-    font = None
-    for font_key, font_display in FONT_STYLE_NAMES.items():
-        if font_display == font_style:
-            font = font_key
-            break
-    
-    if font is None:
-        raise gr.Error(f"无法识别的字体风格 / Unknown font style: {font_style}")
-    
-    # Determine author
-    author = author_dropdown if author_dropdown != "None (Synthetic / 合成风格)" else None
-    
-    # Handle seed
-    if random_seed:
-        import torch
-        seed = torch.randint(0, 2**32, (1,)).item()
-    
-    # Initialize generator if needed (with 4bit setting)
-    gen = init_generator(use_4bit=use_4bit)
-    
-    # Generate
-    result_img, cond_img = gen.generate(
-        text=text,
-        font_style=font,
-        author=author,
-        num_steps=num_steps,
-        seed=seed,
+    quant_mode: str,
+    background_mode: str,
+) -> Generator[Tuple[Any, Any, Any, Any, Any, Any], None, None]:
+    clean_text = sanitize_han_text(text)
+    segments = split_text_into_segments(clean_text)
+    if not segments:
+        raise gr.Error("请先录入汉字。")
+
+    request = GenerationRequest(
+        text=clean_text,
+        author=None if author_dropdown == SYNTHETIC_AUTHOR else author_dropdown,
+        font_style=font_style,
+        num_steps=int(num_steps),
+        seed=int(seed),
+        random_seed=bool(random_seed),
+        quant_mode=quant_mode,
     )
-    
-    return result_img, f"Seed: {seed}"
+    session = _new_session(request, segments, background_mode)
+    active_index: Optional[int] = None
+
+    yield (
+        _next_event(
+            session,
+            "reset",
+            segments=segment_payloads(segments),
+        ),
+        render_draft_strip(segments),
+        "长卷已备，正从右侧起笔。",
+        f"共 {len(segments)} 段",
+        _download_update(None),
+        session.session_id,
+    )
+
+    try:
+        for event in GENERATOR_SERVICE.stream(request):
+            if event.seed is not None:
+                session.base_seed = int(event.seed)
+
+            if event.type == "task_started":
+                yield (
+                    _next_event(
+                        session,
+                        "task_started",
+                        seed=session.base_seed,
+                        total_steps=event.total_steps,
+                    ),
+                    gr.skip(),
+                    event.message,
+                    _seed_summary(session),
+                    gr.skip(),
+                    gr.skip(),
+                )
+
+            elif event.type == "segment_started" and event.segment_index is not None:
+                active_index = int(event.segment_index)
+                yield (
+                    _next_event(
+                        session,
+                        "segment_started",
+                        index=active_index,
+                        total_steps=event.total_steps,
+                    ),
+                    render_draft_strip(
+                        segments,
+                        active_index=active_index,
+                        completed_indices=_completed_indices(session),
+                    ),
+                    event.message,
+                    _seed_summary(session),
+                    gr.skip(),
+                    gr.skip(),
+                )
+
+            elif event.type == "preview" and event.segment_index is not None:
+                active_index = int(event.segment_index)
+                preview = widen_image(event.image)
+                yield (
+                    _next_event(
+                        session,
+                        "preview",
+                        index=active_index,
+                        image=image_to_data_uri(preview, quality=72),
+                        step=event.step,
+                        total_steps=event.total_steps,
+                    ),
+                    gr.skip(),
+                    event.message,
+                    _seed_summary(session),
+                    gr.skip(),
+                    gr.skip(),
+                )
+
+            elif event.type == "segment_completed" and event.segment_index is not None:
+                if event.image is None:
+                    raise RuntimeError("段落完成事件缺少图像。")
+                active_index = int(event.segment_index)
+                final_image = widen_image(event.image)
+                with SESSION_LOCK:
+                    session.images[active_index] = final_image
+                    session.segment_seeds[active_index] = int(event.seed)
+
+                yield (
+                    _next_event(
+                        session,
+                        "segment_completed",
+                        index=active_index,
+                        image=image_to_data_uri(final_image, quality=88),
+                        seed=session.segment_seeds[active_index],
+                    ),
+                    render_draft_strip(
+                        segments,
+                        active_index=None,
+                        completed_indices=_completed_indices(session),
+                    ),
+                    event.message,
+                    _seed_summary(session),
+                    gr.skip(),
+                    gr.skip(),
+                )
+
+            elif event.type == "task_completed":
+                with SESSION_LOCK:
+                    session.busy = False
+                export_path = _export_session(session, session.base_seed)
+                yield (
+                    _next_event(
+                        session,
+                        "task_completed",
+                        index=active_index,
+                        seed=session.base_seed,
+                    ),
+                    render_draft_strip(
+                        segments,
+                        completed_indices=_completed_indices(session),
+                    ),
+                    event.message,
+                    _seed_summary(session),
+                    _download_update(export_path),
+                    gr.skip(),
+                )
+
+    except Exception as error:
+        with SESSION_LOCK:
+            session.busy = False
+        yield (
+            _next_event(
+                session,
+                "task_error",
+                index=active_index,
+                message=str(error),
+            ),
+            render_draft_strip(
+                segments,
+                active_index=None,
+                completed_indices=_completed_indices(session),
+            ),
+            f"生成已停止 · {error}",
+            _seed_summary(session),
+            gr.skip(),
+            gr.skip(),
+        )
+        raise gr.Error(str(error)) from error
 
 
-# Create Gradio interface
-with gr.Blocks(title="UniCalli - Chinese Calligraphy Generator / 中国书法生成器", theme=gr.themes.Soft()) as demo:
-    gr.Markdown("""
-    # 🖌️ UniCalli - 中国书法生成器 / Chinese Calligraphy Generator
-    
-    Generate beautiful Chinese calligraphy in various styles and by different historical masters.
-    
-    用不同历史书法大师的风格生成精美的中国书法。
-    
-    **注意 / Note**: 输入文本必须是 **5个汉字** / Input text must be **5 Chinese characters**.
-    """)
-    
-    with gr.Row():
-        with gr.Column(scale=1):
-            # Input section
-            gr.Markdown("### 📝 输入设置 / Input Settings")
-            
-            text_input = gr.Textbox(
-                label="输入文本 / Input Text (5个汉字 / 5 characters)",
-                placeholder="请输入5个汉字 / Enter 5 Chinese characters, e.g.: 生日快乐喵",
-                value="生日快乐喵",
-                max_lines=1
-            )
-            
-            gr.Markdown("### 👤 书法家选择 / Calligrapher Selection")
-            
-            author_dropdown = gr.Dropdown(
-                label="1. 选择书法家 / Select Calligrapher",
-                choices=["None (Synthetic / 合成风格)"] + AUTHOR_LIST,
-                value="黄庭坚",
-                info="先选择历史书法家 / Choose a historical calligrapher first"
-            )
-            
-            # Get initial fonts for default author (黄庭坚)
-            initial_author = "黄庭坚"
-            initial_fonts = AUTHOR_FONTS.get(initial_author, ["草", "行"])
-            initial_font_choices = [FONT_STYLE_NAMES[f] for f in initial_fonts if f in FONT_STYLE_NAMES]
-            
-            font_style = gr.Dropdown(
-                label="2. 选择字体风格 / Select Font Style",
-                choices=initial_font_choices,
-                value="草 (Cursive Script)",
-                info="根据所选书法家显示可用字体 / Shows available fonts for selected calligrapher"
-            )
-            
-            gr.Markdown("### ⚙️ 生成设置 / Generation Settings")
-            
-            num_steps = gr.Slider(
-                label="生成步数 / Inference Steps",
-                minimum=10,
-                maximum=100,
-                value=25,
-                step=1,
-                info="更多步数 = 更高质量，但更慢 / More steps = higher quality, but slower"
-            )
-            
-            with gr.Row():
-                seed = gr.Number(
-                    label="随机种子 / Seed",
-                    value=42,
-                    precision=0
+def reroll_segment_stream(
+    session_id: str,
+    target_segment: Any,
+) -> Generator[Tuple[Any, Any, Any, Any, Any], None, None]:
+    session = _get_session(session_id)
+    try:
+        token = str(target_segment).strip().split(":", 1)[0]
+        target_index = int(float(token))
+    except Exception as error:
+        raise gr.Error("无法识别要重写的段落。") from error
+
+    if target_index < 0 or target_index >= len(session.segments):
+        raise gr.Error("目标段落超出范围。")
+    if session.images[target_index] is None:
+        raise gr.Error("这一段尚未写成，暂不能重写。")
+
+    with SESSION_LOCK:
+        if session.busy:
+            raise gr.Error("当前仍有生成任务，请稍后再重写。")
+        session.busy = True
+
+    source_segment = session.segments[target_index]
+    original = session.original_request
+    reroll_request = GenerationRequest(
+        text=source_segment.model_text,
+        author=original.author,
+        font_style=original.font_style,
+        num_steps=original.num_steps,
+        seed=session.base_seed,
+        random_seed=True,
+        quant_mode=original.quant_mode,
+    )
+    latest_seed = session.base_seed
+
+    yield (
+        _next_event(
+            session,
+            "reroll_started",
+            index=target_index,
+            total_steps=reroll_request.num_steps,
+        ),
+        render_draft_strip(
+            session.segments,
+            active_index=target_index,
+            completed_indices=_completed_indices(session),
+        ),
+        f"正准备重写第 {target_index + 1} 段。",
+        _seed_summary(session),
+        _download_update(None),
+    )
+
+    try:
+        for event in GENERATOR_SERVICE.stream(reroll_request):
+            if event.seed is not None:
+                latest_seed = int(event.seed)
+
+            if event.type == "preview":
+                preview = widen_image(event.image)
+                yield (
+                    _next_event(
+                        session,
+                        "reroll_preview",
+                        index=target_index,
+                        image=image_to_data_uri(preview, quality=72),
+                        step=event.step,
+                        total_steps=event.total_steps,
+                    ),
+                    gr.skip(),
+                    (
+                        f"第 {target_index + 1} 段显墨 "
+                        f"{min((event.step or 0) + 1, event.total_steps or 1)}/"
+                        f"{event.total_steps or 1}"
+                    ),
+                    _seed_summary(session),
+                    gr.skip(),
                 )
-                random_seed = gr.Checkbox(
-                    label="随机种子 / Random Seed",
-                    value=False
+
+            elif event.type == "segment_completed":
+                if event.image is None:
+                    raise RuntimeError("重写完成事件缺少图像。")
+                replacement = widen_image(event.image)
+
+                # Transaction boundary: replace the old image only after success.
+                with SESSION_LOCK:
+                    session.images[target_index] = replacement
+                    session.segment_seeds[target_index] = latest_seed
+                    session.busy = False
+
+                export_path = _export_session(session, latest_seed)
+                yield (
+                    _next_event(
+                        session,
+                        "reroll_completed",
+                        index=target_index,
+                        image=image_to_data_uri(replacement, quality=88),
+                        seed=latest_seed,
+                    ),
+                    render_draft_strip(
+                        session.segments,
+                        completed_indices=_completed_indices(session),
+                    ),
+                    (
+                        f"第 {target_index + 1} 段已用随机种子 "
+                        f"{latest_seed} 写回原位。"
+                    ),
+                    _seed_summary(session),
+                    _download_update(export_path),
                 )
-            
-            use_4bit = gr.Checkbox(
-                label="4bit量化 / 4-bit Quantization",
-                value=True,
-                info="勾选后VRAM仅需18G，但质量会轻微下降 / Checked: only 18G VRAM needed, slight quality reduction"
+                return
+
+    except Exception as error:
+        with SESSION_LOCK:
+            session.busy = False
+
+        # The browser receives no replacement image and restores the existing one.
+        yield (
+            _next_event(
+                session,
+                "reroll_error",
+                index=target_index,
+                message=str(error),
+            ),
+            render_draft_strip(
+                session.segments,
+                completed_indices=_completed_indices(session),
+            ),
+            f"重写未成，原图已保留 · {error}",
+            _seed_summary(session),
+            gr.skip(),
+        )
+        raise gr.Error(str(error)) from error
+
+
+def update_background_export(session_id: str, background_mode: str):
+    """Keep browser theme and exported file in sync."""
+    if not session_id:
+        return gr.skip()
+
+    session = _get_session(session_id)
+    with SESSION_LOCK:
+        session.background_mode = background_mode
+    export_path = _export_session(session, session.base_seed)
+    return _download_update(export_path) if export_path else gr.skip()
+
+
+with gr.Blocks(
+    title="UniCalli · 数字长卷",
+    fill_height=True,
+    fill_width=True,
+    **BLOCKS_STYLE_KWARGS,
+) as demo:
+    preferences_state = gr.BrowserState(
+        default_value=DEFAULT_PREFERENCES,
+        storage_key="unicalli-author-preferences-v2",
+    )
+    session_id_state = gr.State(value="")
+
+    gr.HTML(
+        """
+        <div class="unicalli-topbar">
+          <div class="topbar-mark">
+            <span class="topbar-seal" aria-hidden="true">翰</span>
+            <span class="topbar-title">
+              <strong>UniCalli</strong>
+              <small>数字书法长卷</small>
+            </span>
+          </div>
+          <div id="run-timer" aria-live="polite">
+            <strong>00:00</strong><small>静候</small>
+          </div>
+          <span class="topbar-balance" aria-hidden="true"></span>
+        </div>
+        """,
+        elem_id="topbar",
+        container=False,
+    )
+
+    with gr.Column(elem_id="app-shell"):
+        stage_html = gr.HTML(
+            value=render_stage_shell(),
+            elem_id="scroll-stage-host",
+            container=False,
+            padding=False,
+        )
+
+        with gr.Row(elem_id="stage-controls"):
+            theme_mode = gr.Radio(
+                choices=["纸白", "砚黑"],
+                value="纸白",
+                label="卷面",
+                show_label=False,
+                elem_id="theme-mode",
             )
-            
-            generate_btn = gr.Button("🎨 生成书法 / Generate Calligraphy", variant="primary", size="lg")
-        
-        with gr.Column(scale=1):
-            # Output section
-            gr.Markdown("### 🖼️ 生成结果 / Generated Result")
-            gr.Markdown("")  # Add spacing
-            
-            with gr.Row():
-                gr.Column(scale=1)  # Left spacer
-                with gr.Column(scale=2):
-                    output_image = gr.Image(
-                        show_label=False,
-                        type="pil",
-                        height=600
+            follow_current_btn = gr.Button(
+                "回到当前段", size="sm", elem_id="follow-current-btn"
+            )
+            fullscreen_btn = gr.Button(
+                "全屏展卷", size="sm", elem_id="fullscreen-btn"
+            )
+
+        with gr.Column(elem_id="composer-dock"):
+            with gr.Row(elem_classes=["composer-main-row"]):
+                text_input = gr.Textbox(
+                    value=INITIAL_TEXT,
+                    placeholder="录入汉字，每五字一段",
+                    label="题写内容",
+                    show_label=False,
+                    lines=3,
+                    max_lines=6,
+                    autofocus=True,
+                    elem_id="text-input",
+                    scale=7,
+                )
+                with gr.Column(elem_classes=["selector-stack"], scale=2):
+                    author_dropdown = gr.Dropdown(
+                        choices=[SYNTHETIC_AUTHOR] + AUTHOR_LIST,
+                        value=INITIAL_AUTHOR,
+                        label="书家",
+                        elem_id="author-dropdown",
                     )
-                gr.Column(scale=1)  # Right spacer
-            
-            seed_info = gr.Textbox(
-                label="种子信息 / Seed Info",
-                interactive=False
+                    font_style = gr.Dropdown(
+                        choices=INITIAL_FONT_CHOICES,
+                        value=(
+                            INITIAL_FONT_CHOICES[0]
+                            if INITIAL_FONT_CHOICES
+                            else None
+                        ),
+                        label="书体",
+                        elem_id="font-dropdown",
+                    )
+                generate_btn = gr.Button(
+                    "落笔",
+                    variant="primary",
+                    elem_id="generate-btn",
+                    scale=1,
+                )
+
+            draft_board = gr.HTML(
+                value=preview_text(INITIAL_TEXT),
+                elem_id="draft-board",
+                container=False,
             )
-    
-    # Author info section
-    with gr.Accordion("📚 可用书法家列表 / Available Calligraphers（共 {} 位 / {} total）".format(len(AUTHOR_LIST), len(AUTHOR_LIST)), open=False):
-        author_info_md = "| 书法家 / Calligrapher | 可用字体 / Available Fonts |\n|--------|----------|\n"
-        for author in AUTHOR_LIST[:30]:
-            fonts = " | ".join(AUTHOR_FONTS[author])
-            desc = author_styles.get(author, "")
-            desc_short = desc[:50] + "..." if len(desc) > 50 else desc
-            author_info_md += f"| **{author}** | {fonts} |\n"
-        if len(AUTHOR_LIST) > 30:
-            author_info_md += f"\n*... 还有 {len(AUTHOR_LIST) - 30} 位书法家 / {len(AUTHOR_LIST) - 30} more calligraphers*"
-        gr.Markdown(author_info_md)
-    
-    # Event handlers
-    # Update font choices when author changes
+
+            with gr.Row(elem_classes=["composer-status-row"]):
+                generation_status = gr.Markdown(
+                    "静候落笔。", elem_id="status-line"
+                )
+                edit_again_btn = gr.Button(
+                    "另题一卷", size="sm", elem_id="edit-again-btn"
+                )
+                download_btn = gr.DownloadButton(
+                    "导出长卷",
+                    value=None,
+                    visible=False,
+                    size="sm",
+                    elem_id="download-scroll-btn",
+                )
+
+        with gr.Column(elem_id="side-drawers"):
+            with gr.Accordion(
+                "书家偏好",
+                open=False,
+                elem_id="preferences-drawer",
+            ):
+                with gr.Row(elem_classes=["preference-tools"]):
+                    favorite_author_btn = gr.Button(
+                        "☆ 收藏",
+                        size="sm",
+                        elem_id="favorite-author-btn",
+                    )
+                    author_tag = gr.Textbox(
+                        label="书家标注",
+                        placeholder="常用、苍劲、待试……",
+                        lines=1,
+                        max_lines=1,
+                        elem_id="author-tag",
+                    )
+                    save_author_tag_btn = gr.Button(
+                        "保存",
+                        size="sm",
+                        elem_id="save-author-tag-btn",
+                    )
+                    favorites_only = gr.Checkbox(
+                        label="只看收藏",
+                        value=False,
+                        elem_id="favorite-only",
+                    )
+                preference_summary = gr.HTML(
+                    value=render_author_preference_summary(DEFAULT_PREFERENCES),
+                    elem_id="preference-summary",
+                    container=False,
+                )
+
+            with gr.Accordion(
+                "生成细节",
+                open=False,
+                elem_id="advanced-drawer",
+            ):
+                num_steps = gr.Slider(
+                    label="生成步数",
+                    minimum=10,
+                    maximum=100,
+                    value=25,
+                    step=1,
+                )
+                with gr.Row():
+                    seed = gr.Number(
+                        label="随机种子", value=42, precision=0
+                    )
+                    random_seed = gr.Checkbox(
+                        label="每次随机", value=False
+                    )
+                quant_mode = gr.Radio(
+                    label="计算精度",
+                    choices=[
+                        "8-bit（推荐）",
+                        "4-bit",
+                        "全精度（显存占用较高）",
+                    ],
+                    value="8-bit（推荐）",
+                )
+
+        seed_info = gr.Textbox(
+            value="", interactive=False, elem_id="seed-info"
+        )
+        event_bus = gr.JSON(
+            value={},
+            visible=False,
+            elem_id="event-bus",
+        )
+        reroll_target = gr.Textbox(
+            value="", lines=1, elem_id="reroll-target"
+        )
+
+    gr.HTML(
+        value="<span aria-hidden='true'></span>",
+        elem_id="js-bootstrap",
+        container=False,
+        js_on_load=INTERACTIONS_JS,
+    )
+
+    demo.load(
+        fn=initialize_preferences,
+        inputs=[preferences_state, author_dropdown],
+        outputs=[
+            author_dropdown,
+            favorite_author_btn,
+            author_tag,
+            preference_summary,
+        ],
+        queue=False,
+    )
+
+    event_bus.change(
+        fn=None,
+        inputs=[event_bus],
+        outputs=None,
+        js="(event) => { window.UniCalli?.applyEvent(event); }",
+        queue=False,
+    )
+
+    text_input.input(
+        fn=preview_text,
+        inputs=[text_input],
+        outputs=[draft_board],
+        queue=False,
+    )
+
     author_dropdown.change(
-        fn=update_font_choices,
-        inputs=[author_dropdown],
-        outputs=[font_style]
+        fn=author_change,
+        inputs=[author_dropdown, preferences_state],
+        outputs=[font_style, favorite_author_btn, author_tag],
+        queue=False,
     )
-    
-    # Generate button click
+
+    favorites_only.change(
+        fn=filter_author_controls,
+        inputs=[favorites_only, preferences_state, author_dropdown],
+        outputs=[
+            author_dropdown,
+            font_style,
+            favorite_author_btn,
+            author_tag,
+        ],
+        queue=False,
+    )
+
+    favorite_author_btn.click(
+        fn=toggle_author_favorite,
+        inputs=[author_dropdown, preferences_state, favorites_only],
+        outputs=[
+            preferences_state,
+            preference_summary,
+            author_dropdown,
+            font_style,
+            favorite_author_btn,
+            author_tag,
+        ],
+        queue=False,
+    )
+
+    save_author_tag_btn.click(
+        fn=save_author_tag,
+        inputs=[author_dropdown, author_tag, preferences_state],
+        outputs=[preferences_state, preference_summary, author_tag],
+        queue=False,
+    )
+
+    theme_mode.change(
+        fn=update_background_export,
+        inputs=[session_id_state, theme_mode],
+        outputs=[download_btn],
+        js=(
+            "(sessionId, mode) => { "
+            "window.UniCalli?.setTheme(mode); "
+            "return [sessionId, mode]; }"
+        ),
+        queue=False,
+    )
+
+    follow_current_btn.click(
+        fn=None,
+        js="() => { window.UniCalli?.followCurrent(); }",
+        queue=False,
+    )
+    fullscreen_btn.click(
+        fn=None,
+        js="() => { window.UniCalli?.toggleFullscreen(); }",
+        queue=False,
+    )
+    edit_again_btn.click(
+        fn=None,
+        js="() => { window.UniCalli?.enterEdit(); }",
+        queue=False,
+    )
+
     generate_btn.click(
-        fn=generate_calligraphy,
+        fn=generation_ui_stream,
         inputs=[
             text_input,
             author_dropdown,
@@ -295,32 +931,96 @@ with gr.Blocks(title="UniCalli - Chinese Calligraphy Generator / 中国书法生
             num_steps,
             seed,
             random_seed,
-            use_4bit
+            quant_mode,
+            theme_mode,
         ],
-        outputs=[output_image, seed_info]
+        outputs=[
+            event_bus,
+            draft_board,
+            generation_status,
+            seed_info,
+            download_btn,
+            session_id_state,
+        ],
+        show_progress="hidden",
+        stream_every=0.12,
+        js=(
+            "(...args) => "
+            "window.UniCalli ? window.UniCalli.beforeGenerate(args) : args"
+        ),
     )
-    
-    # Examples
-    gr.Markdown("### 📋 示例 / Examples")
-    gr.Examples(
-        examples=[
-            ["生日快乐喵", "黄庭坚", "草 (Cursive Script)", 25, 42, False, True],
+
+    reroll_target.change(
+        fn=reroll_segment_stream,
+        inputs=[session_id_state, reroll_target],
+        outputs=[
+            event_bus,
+            draft_board,
+            generation_status,
+            seed_info,
+            download_btn,
         ],
-        inputs=[
-            text_input,
-            author_dropdown,
-            font_style,
-            num_steps,
-            seed,
-            random_seed,
-            use_4bit
-        ],
+        show_progress="hidden",
+        stream_every=0.12,
     )
+
+
+demo.queue(max_size=12)
+
+
+# Gradio 6.x injects CSS during launch(). This project exposes demo.app directly,
+# so initialize theme and CSS config once before uvicorn starts.
+if GRADIO_MAJOR >= 6:
+    from gradio.utils import get_theme
+
+    demo.theme = get_theme(demo.theme)
+    demo.css = CSS
+    demo.css_paths = []
+    demo.head = None
+    demo.head_paths = []
+    demo._set_html_css_theme_variables()
+    demo.config = demo.get_config_file()
+
+
+_health_app = demo.app
+
+
+@_health_app.get("/api/health")
+def _health():
+    return {"status": "ok", "service": "unicalli", "ui": "v4"}
+
+
+# uvicorn 直启绕过 launch()，且 gradio 6.3.0 前端不会自动调用 /startup-events。
+# 必须在 FastAPI 事件循环运行后再启动队列 worker：
+# run_startup_events() 内部的 run_coro_in_background() 用 asyncio.get_event_loop()，
+# 若在 uvicorn.run() 之前调用，worker 任务会挂在永不运行的事件循环上，
+# 导致生成任务入队后无人消费、前端永远卡在"模型准备中"。
+# 注意：不能使用 @app.on_event("startup")——gradio 自带的 lifespan
+# （create_lifespan_handler）不调用 router.startup()，on_event 处理器永不触发。
+# 正确做法是包装 demo.app 的 lifespan，在事件循环运行后启动 worker。
+import contextlib
+
+_old_lifespan = demo.app.router.lifespan_context
+
+
+@contextlib.asynccontextmanager
+async def _lifespan_with_queue_worker(app):
+    async with _old_lifespan(app) as state:
+        if not getattr(app, "startup_events_triggered", False):
+            demo.run_startup_events()
+            app.startup_events_triggered = True
+        yield state
+
+
+demo.app.router.lifespan_context = _lifespan_with_queue_worker
 
 
 if __name__ == "__main__":
-    demo.launch(
-        server_name="0.0.0.0",
-        server_port=55630,
-        share=False
+    import uvicorn
+
+    uvicorn.run(
+        demo.app,
+        host="0.0.0.0",
+        port=55630,
+        log_level="info",
     )

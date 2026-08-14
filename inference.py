@@ -15,7 +15,7 @@ except ImportError:
     HAS_BNB = False
 
 try:
-    from optimum.quanto import quantize, freeze, qint4
+    from optimum.quanto import quantize, freeze, qint4, qint8
     HAS_QUANTO = True
 except ImportError:
     HAS_QUANTO = False
@@ -56,6 +56,8 @@ class CalligraphyGenerator:
         author_descriptions_path: str = "calligraphy_styles_en.json",
         use_deepspeed: bool = False,
         use_4bit_quantization: bool = False,
+        use_8bit_quantization: bool = False,
+        use_dual_gpu: bool = False,
         deepspeed_config: Optional[str] = None
     ):
         """
@@ -80,6 +82,14 @@ class CalligraphyGenerator:
         self.use_deepspeed = use_deepspeed
         self.deepspeed_config = deepspeed_config
         self.use_4bit_quantization = use_4bit_quantization
+        self.use_8bit_quantization = use_8bit_quantization
+        self.use_dual_gpu = use_dual_gpu
+        if self.use_dual_gpu:
+            self.dev0 = torch.device("cuda:0")
+            self.dev1 = torch.device("cuda:1")
+        else:
+            self.dev0 = self.device
+            self.dev1 = self.device
 
         # Load font and author style descriptions
         if os.path.exists(font_descriptions_path):
@@ -98,7 +108,9 @@ class CalligraphyGenerator:
         print("Loading models...")
         # When using DeepSpeed, load text encoders on CPU first to save memory during initialization
         # They will be moved to GPU after DeepSpeed initializes the main model
-        if self.use_deepspeed:
+        # For dual-GPU mode, also load T5 on CPU first: it gets replaced by the qint8 cache
+        # below, so loading bf16 T5 straight to GPU1 would leave a 9.5GB peak behind.
+        if self.use_deepspeed or self.use_dual_gpu:
             text_encoder_device = "cpu"
         elif offload:
             text_encoder_device = "cpu"  # Will be moved to GPU during inference
@@ -106,8 +118,29 @@ class CalligraphyGenerator:
             text_encoder_device = self.device
 
         self.t5 = load_t5(text_encoder_device, max_length=256 if self.is_schnell else 512)
-        self.clip = load_clip(text_encoder_device)
+        self.clip = load_clip(self.dev0 if self.use_dual_gpu else text_encoder_device)
         self.clip.requires_grad_(False)
+
+        # 8-bit quantize T5 (on CPU to keep GPU peak low) — T5 is the 2nd largest VRAM consumer.
+        # In dual-GPU full-precision mode, keep T5 quantized (qint8) to leave VRAM headroom on GPU1
+        # for the second half of the main model; only the main model runs at bf16.
+        if (self.use_8bit_quantization or self.use_dual_gpu) and HAS_QUANTO:
+            t5_cache = os.path.join(os.path.dirname(checkpoint_path), "t5_qint8.pt")
+            if os.path.exists(t5_cache):
+                print(f"Loading quantized T5 from cache: {t5_cache}")
+                self.t5.hf_module = torch.load(t5_cache, map_location="cpu", weights_only=False)
+                print("T5 loaded from cache")
+            else:
+                print("Applying quanto 8-bit quantization to T5...")
+                self.t5 = self.t5.to("cpu")
+                quantize(self.t5, weights=qint8)
+                freeze(self.t5)
+                print(f"Saving T5 quantized cache: {t5_cache}")
+                torch.save(self.t5.hf_module, t5_cache)
+            self.t5 = self.t5.to(self.dev1 if self.use_dual_gpu else self.device)
+            print("T5 8-bit quantization complete!")
+        elif self.use_8bit_quantization:
+            print("Warning: quanto unavailable, T5 stays at full precision")
 
         # If checkpoint provided, load from checkpoint directly without loading flux weights
         if checkpoint_path and os.path.exists(checkpoint_path):
@@ -129,13 +162,13 @@ class CalligraphyGenerator:
         if self.use_deepspeed or offload:
             vae_device = "cpu"
         else:
-            vae_device = self.device
+            vae_device = self.dev0 if self.use_dual_gpu else self.device
 
         self.vae = load_ae(model_name, device=vae_device)
 
         # Move VAE to GPU only if offload (not DeepSpeed)
         if offload and not self.use_deepspeed:
-            self.vae = self.vae.to(self.device)
+            self.vae = self.vae.to(self.dev0 if self.use_dual_gpu else self.device)
 
         # After DeepSpeed init, move text encoders to GPU
         if self.use_deepspeed:
@@ -157,7 +190,7 @@ class CalligraphyGenerator:
             ae=self.vae,
             ref_latent=self.ref_latent,
             model=self.model,
-            device=self.device,
+            device=self.dev0 if self.use_dual_gpu else self.device,
             intern_vlm_path=intern_vlm_path
         )
 
@@ -184,6 +217,34 @@ class CalligraphyGenerator:
         # If using DeepSpeed, keep on CPU; otherwise move to GPU after loading
         load_device = "cpu"
 
+        # Load pre-quantized model from cache if available (skips quantization entirely)
+        cache_path = os.path.join(os.path.dirname(checkpoint_path), "unicalli-base_qint8.pt")
+        if (getattr(self, 'use_8bit_quantization', False) and os.path.exists(cache_path) and not use_deepspeed):
+            print(f"Loading quantized model from cache: {cache_path}")
+            model = torch.load(cache_path, map_location="cpu", weights_only=False)
+            model._is_quantized = True
+            print("Moving model to cuda...")
+            model = model.to(self.device)
+            return model
+
+        # Full-precision bf16 cache: skip the slow checkpoint load + state_dict + fp32->bf16
+        # cast on later runs (first full-precision load takes 20+ min; cached ~5 min).
+        bf16_cache_path = os.path.join(os.path.dirname(checkpoint_path), "unicalli-base_bf16.pt")
+        is_full_precision = not (
+            getattr(self, 'use_8bit_quantization', False)
+            or getattr(self, 'use_4bit_quantization', False)
+        )
+        if is_full_precision and os.path.exists(bf16_cache_path) and not use_deepspeed:
+            print(f"Loading full-precision bf16 model from cache: {bf16_cache_path}")
+            model = torch.load(bf16_cache_path, map_location="cpu", weights_only=False)
+            if getattr(self, 'use_dual_gpu', False):
+                print(f"Moving model to dual GPU ({self.dev0} / {self.dev1})...")
+                model = self._split_model_to_devices(model)
+            else:
+                print(f"Moving model to {self.device}...")
+                model = model.to(self.device)
+            return model
+
         # Create model structure without loading pretrained weights (using "meta" device)
         with torch.device("meta"):
             model = Flux(configs[model_name].params)
@@ -202,9 +263,38 @@ class CalligraphyGenerator:
 
         # Load weights into model
         model.load_state_dict(checkpoint, strict=False)
+        del checkpoint
+        import gc
+        gc.collect()
+
+        # Full-precision mode: checkpoint weights are bf16, but to_empty() created fp32
+        # params, so load_state_dict cast them to fp32 (47.6GB) which overflows dual 24GB.
+        # Cast back to bf16 (23.8GB) to fit the dual-GPU split. Quantized paths below
+        # (qint8/qint4) operate on fp32 and must NOT be cast.
+        if not (getattr(self, 'use_8bit_quantization', False) or getattr(self, 'use_4bit_quantization', False)):
+            print("Casting model to bfloat16 (full precision)...")
+            model = model.to(torch.bfloat16)
+            if not os.path.exists(bf16_cache_path):
+                print(f"Saving full-precision bf16 cache: {bf16_cache_path}")
+                torch.save(model, bf16_cache_path)
+                print("bf16 cache saved")
+
+        # Apply 8-bit quantization if requested (higher quality than 4-bit, ~21GB VRAM)
+        if hasattr(self, 'use_8bit_quantization') and self.use_8bit_quantization:
+            if HAS_QUANTO:
+                print("Applying quanto 8-bit quantization...")
+                quantize(model, weights=qint8)
+                freeze(model)
+                model._is_quantized = True
+                print("8-bit quantization complete!")
+                print(f"Saving quantized model cache: {cache_path}")
+                torch.save(model, cache_path)
+                print("Quantized model cache saved")
+            else:
+                print("Warning: No quantization library available, running in full precision")
 
         # Apply 4-bit quantization if requested
-        if hasattr(self, 'use_4bit_quantization') and self.use_4bit_quantization:
+        elif hasattr(self, 'use_4bit_quantization') and self.use_4bit_quantization:
             if HAS_BNB:
                 print("Applying bitsandbytes NF4 quantization...")
                 model = self._quantize_model_bnb(model)
@@ -222,9 +312,54 @@ class CalligraphyGenerator:
 
         # Move to GPU only if NOT using DeepSpeed (DeepSpeed will handle device placement)
         if not use_deepspeed:
-            print(f"Moving model to {self.device}...")
-            model = model.to(self.device)
+            if getattr(self, 'use_dual_gpu', False):
+                print(f"Moving model to dual GPU ({self.dev0} / {self.dev1})...")
+                model = self._split_model_to_devices(model)
+            else:
+                print(f"Moving model to {self.device}...")
+                model = model.to(self.device)
 
+        return model
+
+    def _split_model_to_devices(self, model):
+        """全精度主模型跨双卡拆分：输入嵌入层 + 前一半 double_blocks + 前 15 个 single_blocks 放 GPU0，
+        后一半 double_blocks + 其余 single_blocks + final_layer 放 GPU1。
+        依据参数量实测：double_blocks 共 12.9GB、single_blocks 共 10.8GB（bf16），
+        拆分点 double[0:9]+single[0:15] 使 GPU0≈10.5GB、GPU1≈13.3GB，均留显存余量。"""
+        dev0, dev1 = self.dev0, self.dev1
+        depth = len(model.double_blocks)
+        split = depth // 2  # 19 -> 9
+        split_single = 15
+
+        model._split_index = split
+        model._split_single_index = split_single
+        model._split_dev0 = dev0
+        model._split_dev1 = dev1
+        # GPU0: 输入嵌入层 + 前一半 double_blocks + 前 15 个 single_blocks
+        model.img_in.to(dev0)
+        model.time_in.to(dev0)
+        model.vector_in.to(dev0)
+        model.guidance_in.to(dev0)
+        model.txt_in.to(dev0)
+        model.pe_embedder.to(dev0)
+        # 注意: module_embeddings/learnable_txt_ids 是 Parameter(Tensor 子类),
+        # .to() 返回新张量而非就地移动, 必须赋值回原属性
+        if model.module_embeddings is not None:
+            model.module_embeddings = torch.nn.Parameter(model.module_embeddings.to(dev0), requires_grad=False)
+        if model.cond_txt_in is not None:
+            model.cond_txt_in.to(dev0)
+        if hasattr(model, 'learnable_txt_ids'):
+            model.learnable_txt_ids = torch.nn.Parameter(model.learnable_txt_ids.to(dev0), requires_grad=False)
+        for b in model.double_blocks[:split]:
+            b.to(dev0)
+        for b in model.single_blocks[:split_single]:
+            b.to(dev0)
+        # GPU1: 后一半 double_blocks + 其余 single_blocks + final_layer
+        for b in model.double_blocks[split:]:
+            b.to(dev1)
+        for b in model.single_blocks[split_single:]:
+            b.to(dev1)
+        model.final_layer.to(dev1)
         return model
 
     def _quantize_model_bnb(self, model):
@@ -550,7 +685,9 @@ class CalligraphyGenerator:
         width: int = 128,
         height: int = 640,  # Fixed for 5 characters
         num_steps: int = 50,
-        guidance: float = 3.5,
+        guidance: float = 4.0,
+        true_gs: float = 3.5,
+        timestep_to_start_cfg: int = 0,
         seed: int = None,
         is_traditional: bool = None,
         save_path: Optional[str] = None
@@ -605,6 +742,9 @@ class CalligraphyGenerator:
             width=width,
             height=height,
             num_steps=num_steps,
+            guidance=guidance,
+            true_gs=true_gs,
+            timestep_to_start_cfg=timestep_to_start_cfg,
             controlnet_image=cond_img,
             is_generation=True,
             cond_text=text,

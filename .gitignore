@@ -183,3 +183,17 @@ cython_debug/
 #.idea/
 
 .DS_Store
+
+# Local backups
+.bak_*/
+*.bak*
+
+# Browser debug profile (CDP)
+.cdp_profile/
+
+# Generation outputs / runtime artifacts
+.unicalli_exports/
+output*.png
+smoke_dual_fp.png
+_gen_status.txt
+new_css.txt

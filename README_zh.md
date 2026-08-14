@@ -10,6 +10,8 @@
 
 [English](README.md) | 简体中文
 
+> **本仓库说明**：本仓库是官方 [EnVision-Research/UniCalli](https://github.com/EnVision-Research/UniCalli) 的本地部署适配版本，包含 Windows 双 RTX 3090 环境下的推理适配（量化缓存 / 双卡全精度拆分 / 离线加载）与一套近全屏横向长卷的 Gradio 前端。**模型权重不随仓库分发**，请从官方渠道下载（见下方"下载模型"）。
+
 <p align="center">
   <img src="docs/assets/demo.png" alt="UniCalli Demo" width="800">
 </p>
@@ -65,6 +67,24 @@ huggingface-cli download TSXu/UniCalli-base --local-dir ./checkpoints
 pip install modelscope
 python -c "from modelscope import snapshot_download; snapshot_download('tianshuo/UniCalli-base', local_dir='./checkpoints')"
 ```
+
+### 本仓库适配：Windows 双卡部署要点
+
+模型权重（主模型 `unicalli-base_cleaned.bin`、InternVL 嵌入、T5/CLIP 文本编码器、VAE）均从官方渠道获取，存放在 `./checkpoints` 与本地模型目录（本机示例：`E:\ai\unicalli-base-models\`），由 `.gitignore` 排除、不入库。启动服务前需设置以下环境变量（离线加载，避免联网卡死）：
+
+```bat
+set UNICALLI_T5_DIR=<本地目录>\xflux_text_encoders
+set UNICALLI_CLIP_DIR=<本地目录>\clip-vit-large-patch14
+set AE=<本地目录>\ae.safetensors
+set HF_HUB_OFFLINE=1
+set CUDA_VISIBLE_DEVICES=0,1
+```
+
+- 量化模式：`UNICALLI_QUANT=8bit|4bit`（8-bit 需 ~16GB 显存；4-bit 官方需 ~18GB）。首次量化会构建 `unicalli-base_qint8.pt` / `t5_qint8.pt` 缓存（E 盘，各约 11.1GB / 4.6GB），之后加载大幅加速
+- 全精度模式：双卡拆分（double_blocks[0:9] + single_blocks[0:15] → GPU0，其余 → GPU1），每步约 60MB 跨卡流量（PCIe，无 P2P）
+- 一键启动：`start_unicalli.bat`（自检端口 55630 → 清理残留 → 双卡占用检查 → 启动 Gradio，路径需按本机环境调整）
+- 冒烟测试：`run_smoke.bat`（4-bit）/ `run_smoke8.bat`（8-bit，生成 `output_8bit.png`）
+- 生成约需 5 字符文本；每段种子为 `base_seed + 切片序号`（可复现、残片纹理不重复）
 
 ## 使用方法
 

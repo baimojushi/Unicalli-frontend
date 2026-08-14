@@ -10,6 +10,8 @@
 
 English | [简体中文](README_zh.md)
 
+> **About this repository**: This is a local-deployment adaptation of the official [EnVision-Research/UniCalli](https://github.com/EnVision-Research/UniCalli), with Windows dual-RTX-3090 inference adaptations (quantized caches / dual-GPU full-precision splitting / offline loading) and a full-width horizontal-scroll Gradio frontend. **Model weights are NOT distributed with this repo** — download them from the official sources below (see "Download Models").
+
 <p align="center">
   <img src="docs/assets/demo.png" alt="UniCalli Demo" width="800">
 </p>
@@ -66,6 +68,22 @@ Or from ModelScope:
 pip install modelscope
 python -c "from modelscope import snapshot_download; snapshot_download('tianshuo/UniCalli-base', local_dir='./checkpoints')"
 ```
+
+### Local-deployment notes (Windows dual-GPU adaptation)
+
+All model weights (checkpoint, InternVL embedding, T5/CLIP text encoders, VAE) come from the official sources above; they are excluded by `.gitignore` and never committed. Before launching, set these env vars for offline loading:
+
+```bat
+set UNICALLI_T5_DIR=<local>\xflux_text_encoders
+set UNICALLI_CLIP_DIR=<local>\clip-vit-large-patch14
+set AE=<local>\ae.safetensors
+set HF_HUB_OFFLINE=1
+set CUDA_VISIBLE_DEVICES=0,1
+```
+
+- Quantization: `UNICALLI_QUANT=8bit|4bit` (8-bit ~16GB VRAM; 4-bit ~18GB). First run builds `unicalli-base_qint8.pt` / `t5_qint8.pt` caches for much faster subsequent loads
+- Full precision: splits the model across two GPUs (~60MB PCIe traffic per step, no P2P under WDDM)
+- One-click launch: `start_unicalli.bat` (port 55630, adjust paths for your machine); smoke tests: `run_smoke.bat` (4-bit) / `run_smoke8.bat` (8-bit)
 
 ## Usage 
 

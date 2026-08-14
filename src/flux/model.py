@@ -199,6 +199,24 @@ class Flux(nn.Module):
         if img.ndim != 3 or txt.ndim != 3:
             raise ValueError("Input img and txt tensors must have 3 dimensions.")
 
+        split = getattr(self, "_split_index", 0)
+        if split:
+            dev0, dev1 = self._split_dev0, self._split_dev1
+            img = img.to(dev0)
+            img_ids = img_ids.to(dev0)
+            txt = txt.to(dev0)
+            txt_ids = txt_ids.to(dev0)
+            y = y.to(dev0)
+            timesteps = timesteps.to(dev0)
+            if timesteps2 is not None:
+                timesteps2 = timesteps2.to(dev0)
+            if cond_txt_latent is not None:
+                cond_txt_latent = cond_txt_latent.to(dev0)
+            if guidance is not None:
+                guidance = guidance.to(dev0)
+            if image_proj is not None:
+                image_proj = image_proj.to(dev0)
+
         # running on sequences img
         img = self.img_in(img)
         if self.module_embeddings is not None:
@@ -239,69 +257,106 @@ class Flux(nn.Module):
         pe = self.pe_embedder(ids)
         if block_controlnet_hidden_states is not None:
             controlnet_depth = len(block_controlnet_hidden_states)
-        for index_block, block in enumerate(self.double_blocks):
-            if self.training and self.gradient_checkpointing:
+        def _run_double_blocks(blocks, start_index):
+            nonlocal img, txt
+            for index_block, block in enumerate(blocks):
+                if self.training and self.gradient_checkpointing:
 
-                def create_custom_forward(module, return_dict=None):
-                    def custom_forward(*inputs):
-                        if return_dict is not None:
-                            return module(*inputs, return_dict=return_dict)
-                        else:
-                            return module(*inputs)
+                    def create_custom_forward(module, return_dict=None):
+                        def custom_forward(*inputs):
+                            if return_dict is not None:
+                                return module(*inputs, return_dict=return_dict)
+                            else:
+                                return module(*inputs)
 
-                    return custom_forward
+                        return custom_forward
 
-                ckpt_kwargs: Dict[str, Any] = {"use_reentrant": False} if is_torch_version(">=", "1.11.0") else {}
-                encoder_hidden_states, hidden_states = torch.utils.checkpoint.checkpoint(
-                    create_custom_forward(block),
-                    img,
-                    txt,
-                    vec,
-                    vec2,
-                    pe,
-                    image_proj,
-                    ip_scale,
-                )
-            else:
-                img, txt = block(
-                    img=img, 
-                    txt=txt, 
-                    vec=vec, 
-                    vec2=vec2,
-                    pe=pe, 
-                    image_proj=image_proj,
-                    ip_scale=ip_scale, 
-                )
-            # controlnet residual
-            if block_controlnet_hidden_states is not None:
-                img = img + block_controlnet_hidden_states[index_block % 2]
+                    ckpt_kwargs: Dict[str, Any] = {"use_reentrant": False} if is_torch_version(">=", "1.11.0") else {}
+                    encoder_hidden_states, hidden_states = torch.utils.checkpoint.checkpoint(
+                        create_custom_forward(block),
+                        img,
+                        txt,
+                        vec,
+                        vec2,
+                        pe,
+                        image_proj,
+                        ip_scale,
+                    )
+                else:
+                    img, txt = block(
+                        img=img,
+                        txt=txt,
+                        vec=vec,
+                        vec2=vec2,
+                        pe=pe,
+                        image_proj=image_proj,
+                        ip_scale=ip_scale,
+                    )
+                # controlnet residual
+                if block_controlnet_hidden_states is not None:
+                    img = img + block_controlnet_hidden_states[(start_index + index_block) % 2]
+            return img, txt
+
+        if split:
+            img, txt = _run_double_blocks(self.double_blocks[:split], 0)
+            img = img.to(dev1)
+            txt = txt.to(dev1)
+            vec = vec.to(dev1)
+            if vec2 is not None:
+                vec2 = vec2.to(dev1)
+            pe = pe.to(dev1)
+            img, txt = _run_double_blocks(self.double_blocks[split:], split)
+        else:
+            img, txt = _run_double_blocks(self.double_blocks, 0)
 
 
         img = torch.cat((txt, img), 1)
-        for block in self.single_blocks:
-            if self.training and self.gradient_checkpointing:
 
-                def create_custom_forward(module, return_dict=None):
-                    def custom_forward(*inputs):
-                        if return_dict is not None:
-                            return module(*inputs, return_dict=return_dict)
-                        else:
-                            return module(*inputs)
+        def _run_single_blocks(blocks):
+            nonlocal img
+            for block in blocks:
+                if self.training and self.gradient_checkpointing:
 
-                    return custom_forward
+                    def create_custom_forward(module, return_dict=None):
+                        def custom_forward(*inputs):
+                            if return_dict is not None:
+                                return module(*inputs, return_dict=return_dict)
+                            else:
+                                return module(*inputs)
 
-                ckpt_kwargs: Dict[str, Any] = {"use_reentrant": False} if is_torch_version(">=", "1.11.0") else {}
-                encoder_hidden_states, hidden_states = torch.utils.checkpoint.checkpoint(
-                    create_custom_forward(block),
-                    img,
-                    vec,
-                    vec2,
-                    pe,
-                    txt.shape[1]
-                )
-            else:
-                img = block(img, vec=vec, vec2=vec2, pe=pe, text_length=txt.shape[1])
+                        return custom_forward
+
+                    ckpt_kwargs: Dict[str, Any] = {"use_reentrant": False} if is_torch_version(">=", "1.11.0") else {}
+                    encoder_hidden_states, hidden_states = torch.utils.checkpoint.checkpoint(
+                        create_custom_forward(block),
+                        img,
+                        vec,
+                        vec2,
+                        pe,
+                        txt.shape[1]
+                    )
+                else:
+                    img = block(img, vec=vec, vec2=vec2, pe=pe, text_length=txt.shape[1])
+
+        split_single = getattr(self, "_split_single_index", 0)
+        if split_single:
+            img = img.to(dev0)
+            vec = vec.to(dev0)
+            if vec2 is not None:
+                vec2 = vec2.to(dev0)
+            pe = pe.to(dev0)
+            _run_single_blocks(self.single_blocks[:split_single])
+            img = img.to(dev1)
+            vec = vec.to(dev1)
+            if vec2 is not None:
+                vec2 = vec2.to(dev1)
+            pe = pe.to(dev1)
+            _run_single_blocks(self.single_blocks[split_single:])
+        else:
+            _run_single_blocks(self.single_blocks)
 
         img = img[:, txt.shape[1]:, ...]
         img = self.final_layer(img, vec, vec2)  # (N, T, patch_size ** 2 * out_channels)
+        if split:
+            img = img.to(dev0)
         return img
