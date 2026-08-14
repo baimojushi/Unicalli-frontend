@@ -231,7 +231,6 @@ body.unicalli-timing #run-timer::before {
   top: 9px;
   right: clamp(16px, 3vw, 54px);
   width: max-content !important;
-  min-width: 0 !important;
   display: flex !important;
   align-items: center !important;
   flex-wrap: nowrap !important;
@@ -258,6 +257,15 @@ body.unicalli-timing #run-timer::before {
   border: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
+}
+
+/* Gradio 的 .form 包装层默认 overflow-x:auto 且宽度被 max-content 链压到 74px，
+   导致包着 104px fieldset 时出现水平滚动条（胶囊内滑块）；
+   width 参与父级 max-content 计算（min-width 不参与），固定 104 贴合 fieldset */
+#stage-controls > .form {
+  flex: 0 0 auto !important;
+  width: 104px !important;
+  overflow: visible !important;
 }
 
 #theme-mode {
@@ -343,6 +351,7 @@ body.unicalli-timing #run-timer::before {
   font-size: 10px !important;
   letter-spacing: .08em;
   box-shadow: none !important;
+  flex: 0 0 auto !important;
 }
 
 #stage-controls button:hover {
@@ -1248,6 +1257,7 @@ body.unicalli-complete #side-drawers {
   #follow-current-btn::after { content: "当前"; font-size: 9px; }
 
   #theme-mode { padding: 1px !important; height: 31px !important; min-width: 76px !important; }
+  #stage-controls > .form { width: 76px !important; }
   #theme-mode label {
     min-width: 34px !important;
     min-height: 27px !important;
