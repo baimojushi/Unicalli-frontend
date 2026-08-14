@@ -128,7 +128,7 @@
 
     const status = document.createElement("span");
     status.className = "caption-state";
-    status.textContent = "待书";
+    status.textContent = "候写";
 
     const text = document.createElement("span");
     text.className = "caption-text";
@@ -138,9 +138,9 @@
     reroll.className = "segment-reroll";
     reroll.type = "button";
     reroll.dataset.rerollIndex = String(segment.index);
-    reroll.textContent = "重写此段";
+    reroll.textContent = "重写";
     reroll.disabled = true;
-    reroll.setAttribute("aria-label", `重新生成第 ${segment.index + 1} 段`);
+    reroll.setAttribute("aria-label", `重写第 ${segment.index + 1} 段`);
 
     meta.append(index, status);
     caption.append(meta, text, reroll);
@@ -287,7 +287,7 @@
   }
 
   function completeSegment(index, src, seed) {
-    const article = setSegmentState(index, "is-complete", "墨定");
+    const article = setSegmentState(index, "is-complete", "定墨");
     if (!article) return;
 
     article.style.setProperty("--decode-progress", "1");

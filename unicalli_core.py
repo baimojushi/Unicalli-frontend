@@ -29,13 +29,13 @@ else:
 
 CHUNK_SIZE = 5
 PAD_CHARACTER = "□"
-SYNTHETIC_AUTHOR = "None (Synthetic / 合成风格)"
+SYNTHETIC_AUTHOR = "合成风格"
 MODEL_LOCK = threading.Lock()
 
 FONT_STYLE_NAMES = {
-    "楷": "楷书 · Regular Script",
-    "行": "行书 · Running Script",
-    "草": "草书 · Cursive Script",
+    "楷": "楷书",
+    "行": "行书",
+    "草": "草书",
 }
 
 EventType = Literal[
@@ -114,13 +114,39 @@ def load_project_data(base_dir: Path | str = ".") -> ProjectData:
     return ProjectData(author_fonts=author_fonts, author_styles=author_styles)
 
 
+def is_han_character(character: str) -> bool:
+    """Return True for CJK unified ideographs accepted by the writing field."""
+    if not character:
+        return False
+    codepoint = ord(character)
+    return any(
+        start <= codepoint <= end
+        for start, end in (
+            (0x3400, 0x4DBF),   # Extension A
+            (0x4E00, 0x9FFF),   # Unified Ideographs
+            (0xF900, 0xFAFF),   # Compatibility Ideographs
+            (0x20000, 0x2A6DF), # Extension B
+            (0x2A700, 0x2B73F), # Extension C
+            (0x2B740, 0x2B81F), # Extension D
+            (0x2B820, 0x2CEAF), # Extension E/F
+            (0x2CEB0, 0x2EBEF), # Extension F/I
+            (0x30000, 0x323AF), # Extension G/H
+        )
+    )
+
+
+def sanitize_han_text(text: str) -> str:
+    """Silently discard anything that is not a Han ideograph."""
+    return "".join(character for character in (text or "") if is_han_character(character))
+
+
 def split_text_into_segments(
     text: str,
     chunk_size: int = CHUNK_SIZE,
     pad_character: str = PAD_CHARACTER,
 ) -> List[SegmentTask]:
     """Split input into five-character model tasks and pad the final task with □."""
-    normalized = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    normalized = sanitize_han_text(text)
     if not normalized:
         return []
 
@@ -133,7 +159,7 @@ def split_text_into_segments(
                 index=index,
                 source_text=source,
                 model_text=padded,
-                display_text=padded.replace("\n", "↵"),
+                display_text=padded,
                 is_padded=len(source) < chunk_size,
             )
         )
@@ -218,7 +244,7 @@ class GeneratorService:
             segments=segments,
             seed=base_seed,
             total_steps=total_steps,
-            message=f"共 {len(segments)} 段，准备展卷。",
+            message=f"共 {len(segments)} 段 · 起卷",
         )
 
         total_preview_count = 0
@@ -232,7 +258,7 @@ class GeneratorService:
                 segment_index=segment.index,
                 seed=segment_seed,
                 total_steps=total_steps,
-                message=f"第 {segment.index + 1}/{len(segments)} 段候墨。",
+                message=f"第 {segment.index + 1}/{len(segments)} 段 · 候墨",
             )
 
             kwargs = {
@@ -266,7 +292,7 @@ class GeneratorService:
                     seed=segment_seed,
                     preview_count=total_preview_count,
                     message=(
-                        f"第 {segment.index + 1}/{len(segments)} 段解码 "
+                        f"第 {segment.index + 1}/{len(segments)} 段 · 显墨 "
                         f"{min(step + 1, total_steps)}/{total_steps}"
                     ),
                 )
@@ -282,15 +308,15 @@ class GeneratorService:
                 total_steps=total_steps,
                 streaming_supported=streaming_supported,
                 preview_count=preview_count,
-                message=f"第 {segment.index + 1}/{len(segments)} 段定墨。",
+                message=f"第 {segment.index + 1}/{len(segments)} 段 · 定墨",
             )
 
         if total_preview_count:
-            stream_note = f"接收 {total_preview_count} 个解码预览帧"
+            stream_note = f"显墨预览 {total_preview_count} 帧"
         elif streaming_segment_count:
             stream_note = "已接入回调，当前管线未返回可转换帧"
         else:
-            stream_note = "模型未暴露中间帧，已按分段成品流式展卷"
+            stream_note = "已按分段依次入卷"
 
         yield GenerationEvent(
             type="task_completed",
@@ -298,7 +324,7 @@ class GeneratorService:
             seed=base_seed,
             total_steps=total_steps,
             preview_count=total_preview_count,
-            message=f"题写完成 · {stream_note}。",
+            message=f"题写完成 · {stream_note}",
         )
 
     @staticmethod
@@ -723,9 +749,9 @@ def compose_seamless_scroll(
 ) -> Optional[Image.Image]:
     """Export a right-origin scroll with no visible seams.
 
-    Dark mode converts the usual black-ink-on-white image into light ink on a
-    dark ground, matching the browser display rather than only changing the
-    canvas behind an opaque white image.
+    砚黑 mode treats the pale source paper as transparency and lifts dark ink
+    into a restrained warm-metal tone, mirroring the browser's 砚黑 display
+    instead of leaving white image rectangles on a dark canvas.
     """
     if not completed_images:
         return None
@@ -733,20 +759,26 @@ def compose_seamless_scroll(
     ordered = [image.convert("RGB") for image in reversed(completed_images)]
     target_height = max(image.height for image in ordered)
     normalized = [resize_to_height(image, target_height) for image in ordered]
-
-    if background_mode == "墨黑":
-        normalized = [
-            ImageOps.invert(image.convert("L")).convert("RGB")
-            for image in normalized
-        ]
-        background = (12, 12, 12)
-    else:
-        background = (250, 249, 246)
-
     overlap = 1 if len(normalized) > 1 else 0
     canvas_width = sum(image.width for image in normalized) - overlap * (len(normalized) - 1)
-    canvas = Image.new("RGB", (max(1, canvas_width), target_height), background)
 
+    if background_mode == "砚黑":
+        background = (24, 21, 18)
+        metal_ink = (214, 199, 166)
+        canvas = Image.new("RGB", (max(1, canvas_width), target_height), background)
+        x = 0
+        for image in normalized:
+            gray = ImageOps.grayscale(image)
+            alpha = ImageOps.invert(gray).point(
+                lambda value: 0 if value < 12 else min(255, int(value * 1.18))
+            )
+            ink_layer = Image.new("RGB", image.size, metal_ink)
+            canvas.paste(ink_layer, (x, 0), alpha)
+            x += image.width - overlap
+        return canvas
+
+    background = (250, 249, 246)
+    canvas = Image.new("RGB", (max(1, canvas_width), target_height), background)
     x = 0
     for image in normalized:
         canvas.paste(image, (x, 0))

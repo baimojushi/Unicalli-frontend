@@ -24,8 +24,8 @@ from unicalli_core import (
     compose_seamless_scroll,
     font_choices_for_author,
     load_project_data,
+    sanitize_han_text,
     split_text_into_segments,
-    widen_image,
 )
 from unicalli_ui import (
     author_tag_value,
@@ -180,31 +180,12 @@ def _export_session(session: ScrollSession, seed: int) -> Optional[str]:
     if not session.images or any(image is None for image in session.images):
         return None
     completed = [image for image in session.images if image is not None]
-    export_mode = "墨黑" if session.background_mode == "砚黑" else session.background_mode
-    scroll = compose_seamless_scroll(completed, export_mode)
+    scroll = compose_seamless_scroll(completed, session.background_mode)
     return _export_path(session, scroll, seed) if scroll is not None else None
 
 
 def _download_update(path: Optional[str]):
     return gr.DownloadButton(value=path, visible=bool(path))
-
-
-def _is_han_character(character: str) -> bool:
-    if not character:
-        return False
-    code = ord(character)
-    return (
-        0x3400 <= code <= 0x4DBF
-        or 0x4E00 <= code <= 0x9FFF
-        or 0xF900 <= code <= 0xFAFF
-        or 0x20000 <= code <= 0x2FA1F
-        or 0x30000 <= code <= 0x323AF
-    )
-
-
-def sanitize_han_text(text: str) -> str:
-    """Silently discard every input character that is not a Han ideograph."""
-    return "".join(character for character in str(text or "") if _is_han_character(character))
 
 
 def preview_text(text: str) -> str:
@@ -349,7 +330,7 @@ def generation_ui_stream(
             segments=segment_payloads(segments),
         ),
         render_draft_strip(segments),
-        "长卷已备，正从右侧起笔。",
+        "起卷中。",
         f"共 {len(segments)} 段",
         _download_update(None),
         session.session_id,
@@ -397,13 +378,12 @@ def generation_ui_stream(
 
             elif event.type == "preview" and event.segment_index is not None:
                 active_index = int(event.segment_index)
-                preview = widen_image(event.image)
                 yield (
                     _next_event(
                         session,
                         "preview",
                         index=active_index,
-                        image=image_to_data_uri(preview, quality=72),
+                        image=image_to_data_uri(event.image, quality=72),
                         step=event.step,
                         total_steps=event.total_steps,
                     ),
@@ -418,7 +398,7 @@ def generation_ui_stream(
                 if event.image is None:
                     raise RuntimeError("段落完成事件缺少图像。")
                 active_index = int(event.segment_index)
-                final_image = widen_image(event.image)
+                final_image = event.image
                 with SESSION_LOCK:
                     session.images[active_index] = final_image
                     session.segment_seeds[active_index] = int(event.seed)
@@ -532,7 +512,7 @@ def reroll_segment_stream(
             active_index=target_index,
             completed_indices=_completed_indices(session),
         ),
-        f"正准备重写第 {target_index + 1} 段。",
+        f"第 {target_index + 1} 段 · 准备重写",
         _seed_summary(session),
         _download_update(None),
     )
@@ -543,19 +523,18 @@ def reroll_segment_stream(
                 latest_seed = int(event.seed)
 
             if event.type == "preview":
-                preview = widen_image(event.image)
                 yield (
                     _next_event(
                         session,
                         "reroll_preview",
                         index=target_index,
-                        image=image_to_data_uri(preview, quality=72),
+                        image=image_to_data_uri(event.image, quality=72),
                         step=event.step,
                         total_steps=event.total_steps,
                     ),
                     gr.skip(),
                     (
-                        f"第 {target_index + 1} 段显墨 "
+                        f"第 {target_index + 1} 段 · 显墨 "
                         f"{min((event.step or 0) + 1, event.total_steps or 1)}/"
                         f"{event.total_steps or 1}"
                     ),
@@ -566,7 +545,7 @@ def reroll_segment_stream(
             elif event.type == "segment_completed":
                 if event.image is None:
                     raise RuntimeError("重写完成事件缺少图像。")
-                replacement = widen_image(event.image)
+                replacement = event.image
 
                 # Transaction boundary: replace the old image only after success.
                 with SESSION_LOCK:
@@ -587,10 +566,7 @@ def reroll_segment_stream(
                         session.segments,
                         completed_indices=_completed_indices(session),
                     ),
-                    (
-                        f"第 {target_index + 1} 段已用随机种子 "
-                        f"{latest_seed} 写回原位。"
-                    ),
+                    f"第 {target_index + 1} 段 · 重写完成",
                     _seed_summary(session),
                     _download_update(export_path),
                 )
@@ -612,7 +588,7 @@ def reroll_segment_stream(
                 session.segments,
                 completed_indices=_completed_indices(session),
             ),
-            f"重写未成，原图已保留 · {error}",
+            f"第 {target_index + 1} 段 · 重写未成，原图已保留 · {error}",
             _seed_summary(session),
             gr.skip(),
         )
@@ -690,20 +666,21 @@ with gr.Blocks(
             with gr.Row(elem_classes=["composer-main-row"]):
                 text_input = gr.Textbox(
                     value=INITIAL_TEXT,
-                    placeholder="录入汉字，每五字一段",
+                    placeholder="题写文字，每五字一段",
                     label="题写内容",
                     show_label=False,
-                    lines=3,
-                    max_lines=6,
+                    lines=2,
+                    max_lines=4,
                     autofocus=True,
                     elem_id="text-input",
-                    scale=7,
+                    scale=6,
                 )
                 with gr.Column(elem_classes=["selector-stack"], scale=2):
                     author_dropdown = gr.Dropdown(
                         choices=[SYNTHETIC_AUTHOR] + AUTHOR_LIST,
                         value=INITIAL_AUTHOR,
                         label="书家",
+                        show_label=False,
                         elem_id="author-dropdown",
                     )
                     font_style = gr.Dropdown(
@@ -714,6 +691,7 @@ with gr.Blocks(
                             else None
                         ),
                         label="书体",
+                        show_label=False,
                         elem_id="font-dropdown",
                     )
                 generate_btn = gr.Button(
@@ -731,7 +709,7 @@ with gr.Blocks(
 
             with gr.Row(elem_classes=["composer-status-row"]):
                 generation_status = gr.Markdown(
-                    "静候落笔。", elem_id="status-line"
+                    "长卷待题。", elem_id="status-line"
                 )
                 edit_again_btn = gr.Button(
                     "另题一卷", size="sm", elem_id="edit-again-btn"
@@ -764,7 +742,7 @@ with gr.Blocks(
                         elem_id="author-tag",
                     )
                     save_author_tag_btn = gr.Button(
-                        "保存",
+                        "保存标注",
                         size="sm",
                         elem_id="save-author-tag-btn",
                     )
@@ -793,7 +771,7 @@ with gr.Blocks(
                 )
                 with gr.Row():
                     seed = gr.Number(
-                        label="随机种子", value=42, precision=0
+                        label="种子", value=42, precision=0
                     )
                     random_seed = gr.Checkbox(
                         label="每次随机", value=False
@@ -803,7 +781,7 @@ with gr.Blocks(
                     choices=[
                         "8-bit（推荐）",
                         "4-bit",
-                        "全精度（显存占用较高）",
+                        "全精度",
                     ],
                     value="8-bit（推荐）",
                 )

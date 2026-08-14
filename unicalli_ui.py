@@ -41,9 +41,9 @@ def render_stage_shell() -> str:
     <div class="scroll-stage-shell" data-stage-state="empty"
          tabindex="0" role="region" aria-label="书法横向长卷">
       <div class="stage-empty-copy">
-        <span class="stage-empty-index">数字书法长卷</span>
-        <strong>卷上无墨</strong>
-        <p>录入汉字，落笔后长卷自右向左展开。</p>
+        <span class="stage-empty-index">UNICALLI · 数字长卷</span>
+        <strong>长卷待题</strong>
+        <p>题写后，墨迹自右向左续入卷中。</p>
       </div>
       <div id="scroll-track" class="scroll-track is-empty" aria-live="polite"></div>
     </div>
@@ -74,7 +74,7 @@ def render_draft_strip(
     if not segments:
         return (
             '<div class="draft-strip is-empty">'
-            '<span>只收汉字；每五字一段，末段以「□」补足。</span>'
+            '<span>每五字一段，末段以「□」补足。</span>'
             "</div>"
         )
 
@@ -82,13 +82,13 @@ def render_draft_strip(
     items: List[str] = []
     for segment in segments:
         state_class = ""
-        state_text = "待书"
+        state_text = "候写"
         if segment.index == active_index:
             state_class = "is-active"
             state_text = "书写中"
         elif segment.index in completed:
             state_class = "is-done"
-            state_text = "已成"
+            state_text = "已入卷"
 
         items.append(
             f'<span class="draft-token {state_class}" data-draft-index="{segment.index}">'
@@ -98,13 +98,13 @@ def render_draft_strip(
 
     padded = sum(segment.display_text.count(PAD_CHARACTER) for segment in segments)
     meta = (
-        f"共 {len(segments)} 段 · 补位 {padded} 字"
+        f"{len(segments)} 段 · 补位 □×{padded}"
         if padded
-        else f"共 {len(segments)} 段"
+        else f"{len(segments)} 段"
     )
     return (
         '<div class="draft-strip">'
-        f'<div class="draft-meta"><span>文字分段</span><span>{meta}</span></div>'
+        f'<div class="draft-meta"><span>题稿</span><span>{meta}</span></div>'
         f'<div class="draft-tokens">{"".join(items)}</div>'
         "</div>"
     )
