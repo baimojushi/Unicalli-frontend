@@ -262,7 +262,9 @@ body.unicalli-timing #run-timer::before {
 
 #theme-mode {
   width: auto !important;
-  min-width: 0 !important;
+  /* 覆盖 Gradio 内联 min-width:min(160px,100%)，并保证容纳两个 48px label
+     （96px 内容 + padding/border，防 overflow hidden 裁掉选项） */
+  min-width: 104px !important;
   /* 覆盖 Gradio block 默认 min-block-size: 57px，避免胶囊被撑高；
      固定高度 = label 28 + padding 4 + border 2，裁掉 Gradio 内部残留空隙 */
   min-height: 0 !important;
@@ -1245,7 +1247,7 @@ body.unicalli-complete #side-drawers {
   #follow-current-btn { font-size: 0 !important; }
   #follow-current-btn::after { content: "当前"; font-size: 9px; }
 
-  #theme-mode { padding: 1px !important; height: 31px !important; }
+  #theme-mode { padding: 1px !important; height: 31px !important; min-width: 76px !important; }
   #theme-mode label {
     min-width: 34px !important;
     min-height: 27px !important;
