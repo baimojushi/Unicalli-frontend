@@ -1638,7 +1638,7 @@ body::after {
     z-index: 72;
     right: var(--mobile-gutter);
     top: auto !important;
-    bottom: calc(var(--mobile-dock-height) + env(safe-area-inset-bottom, 0px) + 14px);
+    bottom: calc(var(--mobile-dock-height, 66px) + env(safe-area-inset-bottom, 0px) + 14px);
     min-height: 40px !important;
     padding: 0 12px !important;
     border: 1px solid var(--line-strong) !important;
@@ -1650,7 +1650,7 @@ body::after {
   }
 
   #scroll-stage-host {
-    inset: var(--topbar-height) 0 calc(var(--mobile-dock-height) + env(safe-area-inset-bottom, 0px)) 0;
+    inset: var(--topbar-height) 0 calc(var(--mobile-dock-height, 66px) + env(safe-area-inset-bottom, 0px)) 0;
   }
 
   .scroll-stage-shell {
@@ -2022,7 +2022,7 @@ body::after {
     left: var(--mobile-gutter);
     right: var(--mobile-gutter);
     top: auto;
-    bottom: calc(var(--mobile-dock-height) + env(safe-area-inset-bottom, 0px) + 14px);
+    bottom: calc(var(--mobile-dock-height, 66px) + env(safe-area-inset-bottom, 0px) + 14px);
     width: auto;
     max-height: min(70svh, 620px);
     overflow-y: auto;
@@ -2034,9 +2034,9 @@ body::after {
   }
 
   body.unicalli-mobile-settings-open #side-drawers {
-    opacity: 1;
-    transform: none;
-    pointer-events: auto;
+    opacity: 1 !important;
+    transform: none !important;
+    pointer-events: auto !important;
   }
 
   body.unicalli-writing #side-drawers,

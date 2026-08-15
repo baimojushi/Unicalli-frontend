@@ -21,6 +21,7 @@
     mobileControlsBound: false,
     mobileComposerOpen: true,
     mobileSettingsOpen: false,
+    dockObserver: null,
   };
 
   const byId = (id) => document.getElementById(id);
@@ -111,8 +112,28 @@
       document.body.append(backdrop);
     }
 
+    initMobileDockObserver();
     state.mobileControlsBound = true;
     syncResponsiveUi();
+  }
+
+  // 实时同步 --mobile-dock-height（dock 收起/展开高度会变化）。
+  // 设置面板（#side-drawers）的 bottom 依赖该变量定位在 dock 上方，
+  // 变量未定义时 calc 会失效导致面板错位或被 dock 遮挡。
+  function initMobileDockObserver() {
+    const dock = byId("composer-dock");
+    if (!dock || state.dockObserver) return;
+    const update = () => {
+      root().style.setProperty(
+        "--mobile-dock-height",
+        `${Math.round(dock.getBoundingClientRect().height)}px`
+      );
+    };
+    update();
+    if (window.ResizeObserver) {
+      state.dockObserver = new ResizeObserver(update);
+      state.dockObserver.observe(dock);
+    }
   }
 
   function syncResponsiveUi() {
