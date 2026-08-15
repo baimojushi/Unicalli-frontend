@@ -1,4 +1,9 @@
 :root {
+  /* 页面本身没有声明配色方案时，Android/Chrome 在系统深色模式下会对原生表单
+     控件（textarea、select、input）做自动反色/强制深色渲染，覆盖掉这里给
+     它们设置的浅色背景与描边，呈现出与整体纸色主题格格不入的黑边灰底。
+     声明 light 后浏览器不再对这些控件做该项自动处理。 */
+  color-scheme: light;
   --page: #eeeae1;
   --paper: #faf7ef;
   --paper-soft: #e8e1d5;
@@ -1817,14 +1822,20 @@ body::after {
     to { opacity: 1; transform: none; }
   }
 
+  /* left/right/transform 全部加 !important：composer-dock 和 .composer-main-row
+     一样是 gradio Column，同样可能被内联 --start-left/--start-top + transform
+     定位覆盖（见 app.py 中已移除的旧补丁的说明注释）。之前只处理了
+     .composer-main-row 的子元素，没处理 dock 自身，导致 dock 有时会被内联
+     transform 往右推挤，吃掉右侧留白，看起来像贴着屏幕边缘。 */
   #composer-dock {
+    position: fixed !important;
     z-index: 108;
-    left: var(--mobile-gutter);
-    right: var(--mobile-gutter);
-    bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    left: var(--mobile-gutter) !important;
+    right: var(--mobile-gutter) !important;
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px)) !important;
     width: auto !important;
     max-height: min(72svh, 620px);
-    transform: none;
+    transform: none !important;
     padding: 0 !important;
     gap: 0 !important;
     overflow: hidden;
@@ -1907,6 +1918,7 @@ body::after {
     gap: 8px !important;
     max-height: 410px !important;
     padding-top: 12px !important;
+    padding-inline: 13px !important;
     opacity: 1 !important;
     overflow: visible !important;
     transform: none !important;

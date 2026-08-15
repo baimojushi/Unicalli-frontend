@@ -98,15 +98,8 @@
         <button class="mobile-settings-toggle" type="button" aria-expanded="false" aria-controls="side-drawers">设置</button>
         <button class="mobile-composer-toggle" type="button" aria-expanded="true" aria-controls="text-input" aria-label="展开或收起题写面板"></button>`;
       dock.prepend(bar);
-
-      bar.querySelector(".mobile-composer-toggle")?.addEventListener("click", () => {
-        setMobileSettingsOpen(false);
-        setMobileComposerOpen(!state.mobileComposerOpen);
-      });
-      bar.querySelector(".mobile-settings-toggle")?.addEventListener("click", () => {
-        setMobileComposerOpen(false);
-        setMobileSettingsOpen(!state.mobileSettingsOpen);
-      });
+      // 点击行为统一由上面 document 级别的委托监听器处理，这里不再单独绑定，
+      // 避免这个节点被 Gradio 重渲染替换后监听器悬空失效。
     }
 
     if (!document.querySelector(".mobile-sheet-backdrop")) {
@@ -131,6 +124,14 @@
       syncMobileStageCopy();
       requestCaptionDepth();
       return;
+    }
+
+    // Gradio 的 Svelte 重渲染可能把 composer-dock 的子节点整体替换掉，连带
+    // 抹掉我们注入的 .mobile-composer-bar。syncResponsiveUi 本身会在 resize、
+    // 流式生成事件等多个时机被调用，顺带检查一下，缺失就补种，成本很低。
+    const dock = byId("composer-dock");
+    if (dock && !dock.querySelector(".mobile-composer-bar")) {
+      ensureMobileControls();
     }
 
     if (body().classList.contains("unicalli-writing") || body().classList.contains("unicalli-complete")) {
@@ -837,12 +838,34 @@
 
   document.addEventListener("click", (event) => {
     wakeUi();
-    const button = event.target.closest(".segment-reroll");
-    if (!button) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const index = Number(button.dataset.rerollIndex);
-    if (Number.isFinite(index)) triggerReroll(index);
+
+    const rerollButton = event.target.closest(".segment-reroll");
+    if (rerollButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      const index = Number(rerollButton.dataset.rerollIndex);
+      if (Number.isFinite(index)) triggerReroll(index);
+      return;
+    }
+
+    // 移动端展开/收起按钮改用事件委托绑定在 document 上，而不是在创建按钮时
+    // 直接 addEventListener：composer-dock 是 Gradio 管理的 Column，Gradio 自身
+    // 的 Svelte 重渲染在任何时候都可能整体替换其子节点（包括我们注入的
+    // .mobile-composer-bar），这会让直接绑在旧节点上的监听器随之失效，
+    // 表现为按钮还在、样式正常，但点击毫无反应。委托到 document 后，只要按钮
+    // 的 class 名还在（哪怕是 Gradio 重渲染后新生成的同名节点），点击就能命中。
+    const composerToggle = event.target.closest(".mobile-composer-toggle");
+    if (composerToggle) {
+      setMobileSettingsOpen(false);
+      setMobileComposerOpen(!state.mobileComposerOpen);
+      return;
+    }
+    const settingsToggle = event.target.closest(".mobile-settings-toggle");
+    if (settingsToggle) {
+      setMobileComposerOpen(false);
+      setMobileSettingsOpen(!state.mobileSettingsOpen);
+      return;
+    }
   }, true);
 
   ["pointermove", "touchstart", "keydown"].forEach((eventName) => {
