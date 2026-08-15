@@ -1331,6 +1331,129 @@ body.unicalli-complete #side-drawers {
   #scroll-stage-host::after { width: 48px; }
 }
 
+/* ---------- 手机竖屏专项（≤480px） ---------- */
+@media (max-width: 480px) {
+  :root {
+    --topbar-height: 48px;
+    --art-height: clamp(140px, 38vh, 280px);
+    --caption-font-size: 11px;
+  }
+
+  /* 顶栏：三列→两行，logo+计时器上，controls 下 */
+  .unicalli-topbar {
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    padding: 6px 10px;
+    padding-right: 0;
+    gap: 4px;
+  }
+  .topbar-title { grid-column: 1; }
+  .topbar-title small { display: none; }
+  .topbar-title strong { font-size: 13px; }
+  .topbar-seal { width: 24px; height: 24px; }
+  #run-timer { grid-column: 2; justify-self: end; min-width: 56px; gap: 4px; }
+  #run-timer small { display: none; }
+  #stage-controls {
+    grid-column: 1 / -1;
+    justify-self: center;
+    top: auto;
+    right: auto;
+    margin-top: 2px;
+    gap: 2px !important;
+  }
+  #stage-controls button {
+    min-height: 28px !important;
+    padding-inline: 5px !important;
+    font-size: 8px !important;
+  }
+  #fullscreen-btn { font-size: 0 !important; }
+  #fullscreen-btn::after { content: "全屏"; font-size: 8px; }
+  #follow-current-btn { font-size: 0 !important; }
+  #follow-current-btn::after { content: "当前"; font-size: 8px; }
+  #theme-mode { padding: 1px !important; height: 28px !important; min-width: 68px !important; }
+  #stage-controls > .form { width: 68px !important; }
+  #theme-mode label {
+    min-width: 30px !important;
+    min-height: 25px !important;
+    padding-inline: 3px !important;
+    font-size: 8px !important;
+  }
+
+  /* 输入区：紧凑、落笔按钮全宽触控友好 */
+  #composer-dock {
+    max-height: calc(100vh - var(--topbar-height) - 12px);
+    padding: 8px !important;
+    gap: 6px !important;
+    bottom: env(safe-area-inset-bottom, 0);
+  }
+  .composer-main-row { flex-direction: column !important; gap: 6px !important; }
+  #text-input { min-width: 100% !important; }
+  #text-input textarea {
+    height: 48px !important;
+    min-height: 48px !important;
+    font-size: 14px !important;
+    padding: 8px 10px !important;
+  }
+  .selector-stack {
+    width: 100% !important;
+    min-width: 100% !important;
+    flex-direction: row !important;
+    gap: 6px !important;
+  }
+  .selector-stack > * { flex: 1 1 0 !important; min-width: 0 !important; }
+  #generate-btn {
+    width: 100% !important;
+    min-height: 48px !important;
+    font-size: 15px !important;
+  }
+
+  /* 侧栏/抽屉：全屏底部弹出，触控友好 */
+  #side-drawers {
+    left: env(safe-area-inset-left, 0);
+    right: env(safe-area-inset-right, 0);
+    top: auto;
+    bottom: calc(var(--topbar-height) + 8px);
+    width: auto;
+    max-height: 55vh;
+    border-radius: 12px 12px 0 0;
+    box-shadow: 0 -4px 20px rgba(0,0,0,.15);
+  }
+
+  /* 横向长卷：edge veils 窄化，caption 更小 */
+  #scroll-stage-host::before,
+  #scroll-stage-host::after { width: 32px; }
+  .scroll-track {
+    padding-inline: 42px;
+    padding-top: 64px;
+    padding-bottom: 140px;
+  }
+  .scroll-segment { grid-template-rows: 64px var(--art-height); }
+  .segment-caption-wrap { height: 64px; }
+  .caption-text { font-size: min(var(--caption-font-size), 11px); }
+  .segment-reroll {
+    bottom: -12px;
+    opacity: .9;
+    min-height: 22px;
+    font-size: 8px;
+  }
+
+  /* 触控目标最小 44px */
+  button, .gr-button, [role="button"] {
+    min-height: 44px !important;
+  }
+  input, select, textarea {
+    font-size: 16px !important; /* 防止 iOS 缩放 */
+  }
+
+  /* 字体全局缩放 */
+  .topbar-title strong { font-size: 13px; }
+  #run-timer { font-size: 11px; }
+  .caption-text { font-size: 11px; }
+  .preference-summary { font-size: 9px; }
+  .preference-summary em { font-size: 8px; }
+  .preference-summary span { font-size: 9px; padding: 0 6px; }
+}
+
 @media (max-height: 760px) and (min-width: 641px) {
   :root { --art-height: clamp(160px, 43vh, 340px); }
   #composer-dock {
