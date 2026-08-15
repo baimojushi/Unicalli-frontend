@@ -18,12 +18,125 @@
     depthFrame: null,
     idleTimer: null,
     inputBound: false,
+    mobileControlsBound: false,
+    mobileComposerOpen: true,
+    mobileSettingsOpen: false,
   };
 
   const byId = (id) => document.getElementById(id);
   const body = () => document.body;
   const root = () => document.documentElement;
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+  const MOBILE_QUERY = "(max-width: 640px)";
+
+  function isMobileLayout() {
+    return window.matchMedia(MOBILE_QUERY).matches;
+  }
+
+  function syncMobileStageCopy() {
+    const stage = state.stage || findStage();
+    if (!stage) return;
+    const emptyCopy = stage.querySelector(".stage-empty-copy");
+    if (!emptyCopy) return;
+    const index = emptyCopy.querySelector(".stage-empty-index");
+    const title = emptyCopy.querySelector("strong");
+    const copy = emptyCopy.querySelector("p");
+    if (isMobileLayout()) {
+      if (index) index.textContent = "掌中长卷 · 纵向阅卷";
+      if (title && stage.dataset.stageState === "empty") title.textContent = "静候落笔";
+      if (copy && stage.dataset.stageState === "empty") copy.textContent = "题写汉字后，墨迹将逐段铺展。上下滑动即可阅卷。";
+    } else {
+      if (index) index.textContent = "横卷 · 右起左展";
+      if (title && stage.dataset.stageState === "empty") title.textContent = "静候落笔";
+      if (copy && stage.dataset.stageState === "empty") copy.textContent = "输入汉字后落笔，墨迹将从右向左连续铺展。";
+    }
+  }
+
+  function setMobileComposerOpen(open) {
+    state.mobileComposerOpen = Boolean(open);
+    if (!isMobileLayout()) {
+      body().classList.remove("unicalli-mobile-composer-open");
+      return;
+    }
+    body().classList.toggle("unicalli-mobile-composer-open", state.mobileComposerOpen);
+    const button = document.querySelector(".mobile-composer-toggle");
+    if (button) button.setAttribute("aria-expanded", String(state.mobileComposerOpen));
+  }
+
+  function setMobileSettingsOpen(open) {
+    state.mobileSettingsOpen = Boolean(open);
+    if (!isMobileLayout()) {
+      body().classList.remove("unicalli-mobile-settings-open");
+      return;
+    }
+    body().classList.toggle("unicalli-mobile-settings-open", state.mobileSettingsOpen);
+    const button = document.querySelector(".mobile-settings-toggle");
+    if (button) button.setAttribute("aria-expanded", String(state.mobileSettingsOpen));
+  }
+
+  function ensureMobileControls() {
+    const dock = byId("composer-dock");
+    if (!dock) {
+      window.setTimeout(ensureMobileControls, 100);
+      return;
+    }
+
+    if (!dock.querySelector(".mobile-composer-bar")) {
+      const bar = document.createElement("div");
+      bar.className = "mobile-composer-bar";
+      bar.innerHTML = `
+        <span class="mobile-composer-title">
+          <strong>题写长卷</strong>
+          <small>输入、书家与书体</small>
+        </span>
+        <button class="mobile-settings-toggle" type="button" aria-expanded="false" aria-controls="side-drawers">设置</button>
+        <button class="mobile-composer-toggle" type="button" aria-expanded="true" aria-controls="text-input" aria-label="展开或收起题写面板"></button>`;
+      dock.prepend(bar);
+
+      bar.querySelector(".mobile-composer-toggle")?.addEventListener("click", () => {
+        setMobileSettingsOpen(false);
+        setMobileComposerOpen(!state.mobileComposerOpen);
+      });
+      bar.querySelector(".mobile-settings-toggle")?.addEventListener("click", () => {
+        setMobileComposerOpen(false);
+        setMobileSettingsOpen(!state.mobileSettingsOpen);
+      });
+    }
+
+    if (!document.querySelector(".mobile-sheet-backdrop")) {
+      const backdrop = document.createElement("button");
+      backdrop.type = "button";
+      backdrop.className = "mobile-sheet-backdrop";
+      backdrop.setAttribute("aria-label", "关闭设置面板");
+      backdrop.addEventListener("click", () => setMobileSettingsOpen(false));
+      document.body.append(backdrop);
+    }
+
+    state.mobileControlsBound = true;
+    syncResponsiveUi();
+  }
+
+  function syncResponsiveUi() {
+    if (!isMobileLayout()) {
+      body().classList.remove(
+        "unicalli-mobile-composer-open",
+        "unicalli-mobile-settings-open"
+      );
+      syncMobileStageCopy();
+      requestCaptionDepth();
+      return;
+    }
+
+    if (body().classList.contains("unicalli-writing") || body().classList.contains("unicalli-complete")) {
+      state.mobileComposerOpen = false;
+      state.mobileSettingsOpen = false;
+    }
+    setMobileComposerOpen(state.mobileComposerOpen);
+    setMobileSettingsOpen(state.mobileSettingsOpen);
+    syncMobileStageCopy();
+    requestCaptionDepth();
+  }
 
   function findStage() {
     return document.querySelector("#scroll-stage-host .scroll-stage-shell");
@@ -218,7 +331,11 @@
       const title = emptyCopy.querySelector("strong");
       const copy = emptyCopy.querySelector("p");
       if (title) title.textContent = "卷面已备";
-      if (copy) copy.textContent = "正在候墨，首段将从右侧显现。";
+      if (copy) {
+        copy.textContent = isMobileLayout()
+          ? "正在候墨，首段完成后会出现在当前视野。"
+          : "正在候墨，首段将从右侧显现。";
+      }
     }
 
     state.activeIndex = null;
@@ -330,8 +447,8 @@
     state.programmaticScroll = true;
     target.scrollIntoView({
       behavior: smooth ? "smooth" : "auto",
-      block: "nearest",
-      inline: "center",
+      block: isMobileLayout() ? "center" : "nearest",
+      inline: isMobileLayout() ? "nearest" : "center",
     });
     window.clearTimeout(state.settleTimer);
     state.settleTimer = window.setTimeout(() => {
@@ -353,18 +470,23 @@
     if (!state.stage || !state.track) return;
 
     const stageRect = state.stage.getBoundingClientRect();
-    const half = Math.max(1, stageRect.width / 2);
-    const center = stageRect.left + half;
+    const vertical = isMobileLayout();
+    const half = Math.max(1, vertical ? stageRect.height / 2 : stageRect.width / 2);
+    const center = vertical
+      ? stageRect.top + half
+      : stageRect.left + half;
 
     state.track.querySelectorAll(".scroll-segment").forEach((article) => {
       const rect = article.getBoundingClientRect();
-      const itemCenter = rect.left + rect.width / 2;
+      const itemCenter = vertical
+        ? rect.top + rect.height / 2
+        : rect.left + rect.width / 2;
       const distance = Math.abs(itemCenter - center) / half;
-      const depth = clamp((distance - 0.43) / 0.57, 0, 1);
-      article.style.setProperty("--caption-scale", String(1 - depth * 0.065));
-      article.style.setProperty("--caption-opacity", String(1 - depth * 0.24));
-      article.style.setProperty("--caption-shift", `${depth * 5}px`);
-      article.style.setProperty("--caption-font-size", `${15 - depth * 2}px`);
+      const depth = clamp((distance - (vertical ? 0.32 : 0.43)) / (vertical ? 0.68 : 0.57), 0, 1);
+      article.style.setProperty("--caption-scale", String(1 - depth * (vertical ? 0.03 : 0.065)));
+      article.style.setProperty("--caption-opacity", String(1 - depth * (vertical ? 0.18 : 0.24)));
+      article.style.setProperty("--caption-shift", `${depth * (vertical ? 2 : 5)}px`);
+      article.style.setProperty("--caption-font-size", `${(vertical ? 13 : 15) - depth * (vertical ? 1 : 2)}px`);
     });
   }
 
@@ -514,7 +636,7 @@
       "wheel",
       (event) => {
         wakeUi();
-        if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
+        if (!isMobileLayout() && Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
           stage.scrollLeft += event.deltaY;
           event.preventDefault();
         }
@@ -552,6 +674,8 @@
     body().classList.remove("unicalli-complete");
     body().classList.add("unicalli-writing");
     setManualMode(false);
+    setMobileComposerOpen(false);
+    setMobileSettingsOpen(false);
     startTimer("准备中");
     return args;
   }
@@ -563,6 +687,8 @@
       "unicalli-ui-dormant"
     );
     setManualMode(false);
+    setMobileSettingsOpen(false);
+    setMobileComposerOpen(true);
     window.setTimeout(() => {
       const input = document.querySelector("#text-input textarea");
       if (input) input.focus();
@@ -717,7 +843,7 @@
   ["pointermove", "touchstart", "keydown"].forEach((eventName) => {
     document.addEventListener(eventName, wakeUi, { passive: true });
   });
-  window.addEventListener("resize", requestCaptionDepth, { passive: true });
+  window.addEventListener("resize", syncResponsiveUi, { passive: true });
   document.addEventListener("fullscreenchange", wakeUi);
 
   window.UniCalli = window.UniCalliV4 = {
@@ -736,5 +862,6 @@
   root().dataset.unicalliTheme = "paper";
   bindStage();
   bindTextInputFilter();
+  ensureMobileControls();
   stopTimer("静候", false);
 })();
