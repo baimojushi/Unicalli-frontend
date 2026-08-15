@@ -836,36 +836,47 @@
     scheduleUiRest();
   }
 
+  // 移动端展开/收起/设置按钮：事件委托到 document（捕获阶段）。
+  // 兼容华为等旧 WebView：真实触摸可能不生成 click（被 Gradio Svelte
+  // 事件委托或浏览器 touch 处理拦截），故同时监听 pointerdown——
+  // pointer 事件不依赖 click 合成，触摸即触发。用时间窗口防双触发。
+  let lastMobileTap = 0;
+  function handleMobileTap(event) {
+    const now = Date.now();
+    if (now - lastMobileTap < 450) return true; // pointerdown 已处理，跳过后续 click
+    const composerToggle = event.target.closest(".mobile-composer-toggle");
+    if (composerToggle) {
+      lastMobileTap = now;
+      setMobileSettingsOpen(false);
+      setMobileComposerOpen(!state.mobileComposerOpen);
+      return true;
+    }
+    const settingsToggle = event.target.closest(".mobile-settings-toggle");
+    if (settingsToggle) {
+      lastMobileTap = now;
+      setMobileComposerOpen(false);
+      setMobileSettingsOpen(!state.mobileSettingsOpen);
+      return true;
+    }
+    return false;
+  }
   document.addEventListener("click", (event) => {
     wakeUi();
-
+    if (handleMobileTap(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     const rerollButton = event.target.closest(".segment-reroll");
     if (rerollButton) {
       event.preventDefault();
       event.stopPropagation();
       const index = Number(rerollButton.dataset.rerollIndex);
       if (Number.isFinite(index)) triggerReroll(index);
-      return;
     }
-
-    // 移动端展开/收起按钮改用事件委托绑定在 document 上，而不是在创建按钮时
-    // 直接 addEventListener：composer-dock 是 Gradio 管理的 Column，Gradio 自身
-    // 的 Svelte 重渲染在任何时候都可能整体替换其子节点（包括我们注入的
-    // .mobile-composer-bar），这会让直接绑在旧节点上的监听器随之失效，
-    // 表现为按钮还在、样式正常，但点击毫无反应。委托到 document 后，只要按钮
-    // 的 class 名还在（哪怕是 Gradio 重渲染后新生成的同名节点），点击就能命中。
-    const composerToggle = event.target.closest(".mobile-composer-toggle");
-    if (composerToggle) {
-      setMobileSettingsOpen(false);
-      setMobileComposerOpen(!state.mobileComposerOpen);
-      return;
-    }
-    const settingsToggle = event.target.closest(".mobile-settings-toggle");
-    if (settingsToggle) {
-      setMobileComposerOpen(false);
-      setMobileSettingsOpen(!state.mobileSettingsOpen);
-      return;
-    }
+  }, true);
+  document.addEventListener("pointerdown", (event) => {
+    if (handleMobileTap(event)) event.preventDefault();
   }, true);
 
   ["pointermove", "touchstart", "keydown"].forEach((eventName) => {
