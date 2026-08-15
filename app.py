@@ -976,53 +976,23 @@ def _health():
 # 注意：不能改 api_prefix——gradio 后端已从请求正确推断 root（含 /unicalli），
 # 前端 URL = root + api_prefix(/gradio_api) 已正确；注入 api_prefix 会导致
 # root + 注入值 双前缀/畸形 URL（实测 404/405）。
-# 手机竖屏（≤480px）布局修复：gradio 6 用内联 CSS 变量（--start-left/--start-top）
-# + transform 定位 composer-main-row 子元素，CSS 无法覆盖内联变量。
-# 注入脚本清除内联 CSS 变量与 transform，配合 MutationObserver 持续监听。
+# 说明：曾经通过 JS 在客户端清除 gradio 6 内联布局变量（--start-left/--start-top）
+# 并用 MutationObserver 持续监听 .composer-main-row 的做法已废弃，原因：
+#   1) clearInlineLayout() 会写 row.style（display/flexDirection/gap），而该元素本身
+#      带有 composer-main-row 类且正是 Observer 的监听目标（attributeFilter:['style']），
+#      于是每次修正都会重新触发自身回调，形成不会停止的同步自触发循环，
+#      在移动端会持续占满主线程、耗电、甚至卡死页面。
+#   2) 该脚本没有任何视口/媒体查询判断，会在所有设备上无条件把
+#      composer-main-row 强制改成纵向堆叠布局，桌面端也会被误伤。
+#   3) unicalli_ui.css 中 @media (max-width: 480px) / (max-width: 640px) 已经用
+#      !important 覆盖了同样的内联变量与 transform（CSS !important 规则本身就能
+#      压过未加 !important 的内联样式，包括自定义属性），配合 unicalli_ui.js 中
+#      matchMedia 驱动的 mobile-composer 面板逻辑已经是完整、正确、按视口生效的方案，
+#      客户端 JS 补丁纯属多余且有害，予以移除，只保留必要的子路径尾斜杠重定向。
 _PREFIX_SCRIPT = (
     "<script>(function(){"
     "var p=location.pathname||'';"
     "if(p&&p!=='/'&&p.charAt(p.length-1)!=='/'){location.replace(location.href+'/');}"
-    "function clearInlineLayout(){"
-    "  var row=document.querySelector('.composer-main-row');"
-    "  if(!row) return;"
-    "  var kids=row.children;"
-    "  for(var i=0;i<kids.length;i++){"
-    "    var el=kids[i];"
-    "    el.style.removeProperty('--start-left');"
-    "    el.style.removeProperty('--start-top');"
-    "    el.style.removeProperty('--start-width');"
-    "    el.style.removeProperty('--start-height');"
-    "    el.style.removeProperty('transform');"
-    "    el.style.position='static';"
-    "    el.style.left='auto';"
-    "    el.style.top='auto';"
-    "    el.style.right='auto';"
-    "    el.style.bottom='auto';"
-    "    el.style.width='100%';"
-    "    el.style.maxWidth='100%';"
-    "    el.style.flex='1 1 100%';"
-    "    el.style.boxSizing='border-box';"
-    "  }"
-    "  var rowStyle=row.style;"
-    "  rowStyle.display='flex';"
-    "  rowStyle.flexDirection='column';"
-    "  rowStyle.gap='6px';"
-    "}"
-    "if(document.readyState==='loading'){"
-    "  document.addEventListener('DOMContentLoaded',clearInlineLayout);"
-    "}else{"
-    "  clearInlineLayout();"
-    "}"
-    "new MutationObserver(function(muts){"
-    "  for(var i=0;i<muts.length;i++){"
-    "    var t=muts[i].target;"
-    "    if(t.classList&&t.classList.contains('composer-main-row')){"
-    "      clearInlineLayout();"
-    "      break;"
-    "    }"
-    "  }"
-    "}).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['style']});"
     "})();</script>"
 )
 
