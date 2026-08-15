@@ -1010,6 +1010,9 @@ class _InjectApiPrefixMiddleware(BaseHTTPMiddleware):
                 text = text.replace("</head>", _PREFIX_SCRIPT + "</head>", 1)
                 payload = text.encode("utf-8")
                 headers = dict(response.headers)
+                # 无缓存头时浏览器会对 HTML（含内联 CSS/JS）做启发式缓存，
+                # 导致手机端加载旧版页面（移动端修复不生效）。强制 no-store。
+                headers["cache-control"] = "no-store"
                 headers["content-length"] = str(len(payload))
                 return Response(content=payload, status_code=200, headers=headers, media_type="text/html")
         return response
