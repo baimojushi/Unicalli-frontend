@@ -2136,3 +2136,109 @@ body::after {
     padding-inline: 7px !important;
   }
 }
+
+/* ---------- color-mix() 兼容 fallback ----------
+   旧 WebView（实测华为 TAS-AN00 / Android 12 WebView）不支持 color-mix()，
+   含 color-mix 的规则整条被丢弃 → 移动端主题/输入控件/按钮大面积回退到
+   Gradio 默认深色（黑边灰底、Dock 贴边、视觉错乱）。
+   此块为不支持 color-mix 的浏览器提供纸白/砚黑两套直接色值。 */
+@supports not (color: color-mix(in srgb, red, blue)) {
+  /* 输入控件：覆盖 Gradio 默认深色渲染 */
+  textarea,
+  input[type="text"],
+  input[type="search"],
+  select,
+  .form textarea {
+    color-scheme: light;
+    background: rgba(255, 253, 247, 0.66) !important;
+    color: #191914 !important;
+    border-color: rgba(71, 61, 46, 0.16) !important;
+  }
+  html[data-unicalli-theme="inkstone"] textarea,
+  html[data-unicalli-theme="inkstone"] input[type="text"],
+  html[data-unicalli-theme="inkstone"] input[type="search"],
+  html[data-unicalli-theme="inkstone"] select,
+  html[data-unicalli-theme="inkstone"] .form textarea {
+    background: rgba(255, 244, 220, 0.05) !important;
+    color: #eee6d6 !important;
+    border-color: rgba(194, 163, 107, 0.18) !important;
+  }
+
+  /* 顶栏 */
+  .unicalli-topbar { background: rgba(244, 240, 231, 0.92) !important; }
+  html[data-unicalli-theme="inkstone"] .unicalli-topbar {
+    background: rgba(28, 25, 20, 0.92) !important;
+  }
+
+  /* 主题胶囊 */
+  #theme-mode {
+    background: rgba(244, 240, 231, 0.84) !important;
+    box-shadow: none !important;
+  }
+  html[data-unicalli-theme="inkstone"] #theme-mode {
+    background: rgba(28, 25, 20, 0.84) !important;
+  }
+
+  /* 落笔按钮（黑色磨砂玻璃） */
+  #generate-btn {
+    background: linear-gradient(
+      180deg, rgba(255, 255, 255, 0.07),
+      rgba(255, 255, 255, 0.02) 45%, transparent 62%
+    ), rgba(13, 13, 11, 0.58) !important;
+    border-color: rgba(255, 255, 255, 0.16) !important;
+  }
+
+  /* 底部题写面板与收起/设置栏 */
+  #composer-dock { background: rgba(249, 246, 238, 0.94) !important; }
+  html[data-unicalli-theme="inkstone"] #composer-dock {
+    background: rgba(31, 28, 22, 0.94) !important;
+  }
+  .mobile-composer-bar {
+    background: rgba(249, 246, 238, 0.96) !important;
+    border-bottom-color: rgba(71, 61, 46, 0.10) !important;
+  }
+  html[data-unicalli-theme="inkstone"] .mobile-composer-bar {
+    background: rgba(31, 28, 22, 0.96) !important;
+    border-bottom-color: rgba(194, 163, 107, 0.12) !important;
+  }
+
+  /* 设置面板（side-drawers）与遮罩 */
+  #side-drawers {
+    background: rgba(249, 246, 238, 0.96) !important;
+    border-top-color: rgba(71, 61, 46, 0.12) !important;
+  }
+  html[data-unicalli-theme="inkstone"] #side-drawers {
+    background: rgba(31, 28, 22, 0.96) !important;
+    border-top-color: rgba(194, 163, 107, 0.12) !important;
+  }
+
+  /* 长卷切片与草稿条 */
+  .scroll-segment {
+    background: rgba(250, 247, 239, 0.72) !important;
+    border-color: rgba(71, 61, 46, 0.12) !important;
+  }
+  html[data-unicalli-theme="inkstone"] .scroll-segment {
+    background: rgba(35, 32, 25, 0.72) !important;
+    border-color: rgba(194, 163, 107, 0.14) !important;
+  }
+  #draft-board { border-top-color: rgba(71, 61, 46, 0.10) !important; }
+  html[data-unicalli-theme="inkstone"] #draft-board {
+    border-top-color: rgba(194, 163, 107, 0.12) !important;
+  }
+
+  /* caption 文字与状态 */
+  .caption-text { color: #1a1915 !important; }
+  html[data-unicalli-theme="inkstone"] .caption-text { color: #eee5d4 !important; }
+  .caption-state { color: #8e8879 !important; }
+  html[data-unicalli-theme="inkstone"] .caption-state { color: #938775 !important; }
+  .draft-meta span { color: #8e8879 !important; }
+  html[data-unicalli-theme="inkstone"] .draft-meta span { color: #938775 !important; }
+
+  /* 横向滚动条配色 */
+  .scroll-track::-webkit-scrollbar-thumb {
+    background: rgba(138, 114, 75, 0.30) !important;
+  }
+  html[data-unicalli-theme="inkstone"] .scroll-track::-webkit-scrollbar-thumb {
+    background: rgba(168, 139, 88, 0.30) !important;
+  }
+}
