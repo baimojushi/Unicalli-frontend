@@ -876,7 +876,10 @@
     }
   }, true);
   document.addEventListener("pointerdown", (event) => {
-    if (handleMobileTap(event)) event.preventDefault();
+    // 不 preventDefault：让 mousedown 默认行为（焦点转移 → blur textarea →
+    // 输入法收起）正常发生。只在 pointerdown 阶段执行逻辑以兼容
+    // 华为等不生成 click 的旧 WebView；click 由 450ms 窗口去重。
+    handleMobileTap(event);
   }, true);
 
   ["pointermove", "touchstart", "keydown"].forEach((eventName) => {
