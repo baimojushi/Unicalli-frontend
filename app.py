@@ -976,10 +976,53 @@ def _health():
 # 注意：不能改 api_prefix——gradio 后端已从请求正确推断 root（含 /unicalli），
 # 前端 URL = root + api_prefix(/gradio_api) 已正确；注入 api_prefix 会导致
 # root + 注入值 双前缀/畸形 URL（实测 404/405）。
+# 手机竖屏（≤480px）布局修复：gradio 6 用内联 CSS 变量（--start-left/--start-top）
+# + transform 定位 composer-main-row 子元素，CSS 无法覆盖内联变量。
+# 注入脚本清除内联 CSS 变量与 transform，配合 MutationObserver 持续监听。
 _PREFIX_SCRIPT = (
     "<script>(function(){"
     "var p=location.pathname||'';"
     "if(p&&p!=='/'&&p.charAt(p.length-1)!=='/'){location.replace(location.href+'/');}"
+    "function clearInlineLayout(){"
+    "  var row=document.querySelector('.composer-main-row');"
+    "  if(!row) return;"
+    "  var kids=row.children;"
+    "  for(var i=0;i<kids.length;i++){"
+    "    var el=kids[i];"
+    "    el.style.removeProperty('--start-left');"
+    "    el.style.removeProperty('--start-top');"
+    "    el.style.removeProperty('--start-width');"
+    "    el.style.removeProperty('--start-height');"
+    "    el.style.removeProperty('transform');"
+    "    el.style.position='static';"
+    "    el.style.left='auto';"
+    "    el.style.top='auto';"
+    "    el.style.right='auto';"
+    "    el.style.bottom='auto';"
+    "    el.style.width='100%';"
+    "    el.style.maxWidth='100%';"
+    "    el.style.flex='1 1 100%';"
+    "    el.style.boxSizing='border-box';"
+    "  }"
+    "  var rowStyle=row.style;"
+    "  rowStyle.display='flex';"
+    "  rowStyle.flexDirection='column';"
+    "  rowStyle.gap='6px';"
+    "}"
+    "if(document.readyState==='loading'){"
+    "  document.addEventListener('DOMContentLoaded',clearInlineLayout);"
+    "}else{"
+    "  clearInlineLayout();"
+    "}"
+    "new MutationObserver(function(muts){"
+    "  for(var i=0;i<muts.length;i++){"
+    "    var t=muts[i].target;"
+    "    if(t.classList&&t.classList.contains('composer-main-row')){"
+    "      clearInlineLayout();"
+    "      break;"
+    "    }"
+    "  }"
+    "}).observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:['style']});"
     "})();</script>"
 )
 
