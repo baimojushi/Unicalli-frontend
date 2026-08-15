@@ -18,10 +18,6 @@
     depthFrame: null,
     idleTimer: null,
     inputBound: false,
-    mobileControlsBound: false,
-    mobileComposerOpen: true,
-    mobileSettingsOpen: false,
-    dockObserver: null,
   };
 
   const byId = (id) => document.getElementById(id);
@@ -29,140 +25,10 @@
   const root = () => document.documentElement;
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-  const MOBILE_QUERY = "(max-width: 640px)";
+  const MOBILE_QUERY = "(max-width: 767px)";
 
   function isMobileLayout() {
     return window.matchMedia(MOBILE_QUERY).matches;
-  }
-
-  function syncMobileStageCopy() {
-    const stage = state.stage || findStage();
-    if (!stage) return;
-    const emptyCopy = stage.querySelector(".stage-empty-copy");
-    if (!emptyCopy) return;
-    const index = emptyCopy.querySelector(".stage-empty-index");
-    const title = emptyCopy.querySelector("strong");
-    const copy = emptyCopy.querySelector("p");
-    if (isMobileLayout()) {
-      if (index) index.textContent = "掌中长卷 · 纵向阅卷";
-      if (title && stage.dataset.stageState === "empty") title.textContent = "静候落笔";
-      if (copy && stage.dataset.stageState === "empty") copy.textContent = "题写汉字后，墨迹将逐段铺展。上下滑动即可阅卷。";
-    } else {
-      if (index) index.textContent = "横卷 · 右起左展";
-      if (title && stage.dataset.stageState === "empty") title.textContent = "静候落笔";
-      if (copy && stage.dataset.stageState === "empty") copy.textContent = "输入汉字后落笔，墨迹将从右向左连续铺展。";
-    }
-  }
-
-  // 展开/收起改为在 body 上维护 "collapsed" 类而不是 "open" 类：
-  // CSS 中题写区默认可见（见 unicalli_ui.css 对应 @media 块），这里只在
-  // 用户主动收起、或写作/完成态时补一个 collapsed 类。即便本函数因为任何
-  // 原因未能及时执行（组件尚未挂载、matchMedia 时序问题等），题写区仍然
-  // 保持默认可见，不会出现"看不到输入框"的情况。
-  function setMobileComposerOpen(open) {
-    state.mobileComposerOpen = Boolean(open);
-    if (!isMobileLayout()) {
-      body().classList.remove("unicalli-mobile-composer-collapsed");
-      return;
-    }
-    body().classList.toggle("unicalli-mobile-composer-collapsed", !state.mobileComposerOpen);
-    const button = document.querySelector(".mobile-composer-toggle");
-    if (button) button.setAttribute("aria-expanded", String(state.mobileComposerOpen));
-  }
-
-  function setMobileSettingsOpen(open) {
-    state.mobileSettingsOpen = Boolean(open);
-    if (!isMobileLayout()) {
-      body().classList.remove("unicalli-mobile-settings-open");
-      return;
-    }
-    body().classList.toggle("unicalli-mobile-settings-open", state.mobileSettingsOpen);
-    const button = document.querySelector(".mobile-settings-toggle");
-    if (button) button.setAttribute("aria-expanded", String(state.mobileSettingsOpen));
-  }
-
-  function ensureMobileControls() {
-    const dock = byId("composer-dock");
-    if (!dock) {
-      window.setTimeout(ensureMobileControls, 100);
-      return;
-    }
-
-    if (!dock.querySelector(".mobile-composer-bar")) {
-      const bar = document.createElement("div");
-      bar.className = "mobile-composer-bar";
-      bar.innerHTML = `
-        <span class="mobile-composer-title">
-          <strong>题写长卷</strong>
-          <small>输入、书家与书体</small>
-        </span>
-        <button class="mobile-settings-toggle" type="button" aria-expanded="false" aria-controls="side-drawers">设置</button>
-        <button class="mobile-composer-toggle" type="button" aria-expanded="true" aria-controls="text-input" aria-label="展开或收起题写面板"></button>`;
-      dock.prepend(bar);
-      // 点击行为统一由上面 document 级别的委托监听器处理，这里不再单独绑定，
-      // 避免这个节点被 Gradio 重渲染替换后监听器悬空失效。
-    }
-
-    if (!document.querySelector(".mobile-sheet-backdrop")) {
-      const backdrop = document.createElement("button");
-      backdrop.type = "button";
-      backdrop.className = "mobile-sheet-backdrop";
-      backdrop.setAttribute("aria-label", "关闭设置面板");
-      backdrop.addEventListener("click", () => setMobileSettingsOpen(false));
-      document.body.append(backdrop);
-    }
-
-    initMobileDockObserver();
-    state.mobileControlsBound = true;
-    syncResponsiveUi();
-  }
-
-  // 实时同步 --mobile-dock-height（dock 收起/展开高度会变化）。
-  // 设置面板（#side-drawers）的 bottom 依赖该变量定位在 dock 上方，
-  // 变量未定义时 calc 会失效导致面板错位或被 dock 遮挡。
-  function initMobileDockObserver() {
-    const dock = byId("composer-dock");
-    if (!dock || state.dockObserver) return;
-    const update = () => {
-      root().style.setProperty(
-        "--mobile-dock-height",
-        `${Math.round(dock.getBoundingClientRect().height)}px`
-      );
-    };
-    update();
-    if (window.ResizeObserver) {
-      state.dockObserver = new ResizeObserver(update);
-      state.dockObserver.observe(dock);
-    }
-  }
-
-  function syncResponsiveUi() {
-    if (!isMobileLayout()) {
-      body().classList.remove(
-        "unicalli-mobile-composer-collapsed",
-        "unicalli-mobile-settings-open"
-      );
-      syncMobileStageCopy();
-      requestCaptionDepth();
-      return;
-    }
-
-    // Gradio 的 Svelte 重渲染可能把 composer-dock 的子节点整体替换掉，连带
-    // 抹掉我们注入的 .mobile-composer-bar。syncResponsiveUi 本身会在 resize、
-    // 流式生成事件等多个时机被调用，顺带检查一下，缺失就补种，成本很低。
-    const dock = byId("composer-dock");
-    if (dock && !dock.querySelector(".mobile-composer-bar")) {
-      ensureMobileControls();
-    }
-
-    if (body().classList.contains("unicalli-writing") || body().classList.contains("unicalli-complete")) {
-      state.mobileComposerOpen = false;
-      state.mobileSettingsOpen = false;
-    }
-    setMobileComposerOpen(state.mobileComposerOpen);
-    setMobileSettingsOpen(state.mobileSettingsOpen);
-    syncMobileStageCopy();
-    requestCaptionDepth();
   }
 
   function findStage() {
@@ -316,11 +182,25 @@
 
   function insertSegmentInOrder(article, index) {
     const children = Array.from(state.track?.children || []);
-    const before = children.find(
-      (node) => Number(node.dataset.segmentIndex) < Number(index)
-    );
+    const targetIndex = Number(index);
+    const before = children.find((node) => {
+      const nodeIndex = Number(node.dataset.segmentIndex);
+      return isMobileLayout() ? nodeIndex > targetIndex : nodeIndex < targetIndex;
+    });
     if (before) state.track.insertBefore(article, before);
     else state.track.append(article);
+  }
+
+  function syncSegmentOrderForLayout() {
+    if (!state.track) return;
+    const nodes = Array.from(state.track.querySelectorAll(".scroll-segment"));
+    nodes.sort((left, right) => {
+      const a = Number(left.dataset.segmentIndex);
+      const b = Number(right.dataset.segmentIndex);
+      return isMobileLayout() ? a - b : b - a;
+    });
+    nodes.forEach((node) => state.track.append(node));
+    requestCaptionDepth();
   }
 
   function ensureSegment(index) {
@@ -369,7 +249,11 @@
     state.lastRerollIndex = null;
     state.rerollPendingIndex = null;
     setManualMode(false);
-    state.stage.scrollLeft = state.stage.scrollWidth;
+    if (isMobileLayout()) {
+      state.stage.scrollTop = 0;
+    } else {
+      state.stage.scrollLeft = state.stage.scrollWidth;
+    }
   }
 
   const SEGMENT_STATE_CLASSES = [
@@ -674,21 +558,42 @@
 
     stage.addEventListener("keydown", (event) => {
       wakeUi();
-      const amount = Math.max(160, stage.clientWidth * 0.36);
-      if (event.key === "ArrowLeft") {
+      const mobile = isMobileLayout();
+      const amount = Math.max(
+        160,
+        (mobile ? stage.clientHeight : stage.clientWidth) * 0.36
+      );
+
+      if (mobile && event.key === "ArrowUp") {
+        stage.scrollBy({ top: -amount, behavior: "smooth" });
+        setManualMode(true);
+        event.preventDefault();
+      } else if (mobile && event.key === "ArrowDown") {
+        stage.scrollBy({ top: amount, behavior: "smooth" });
+        setManualMode(true);
+        event.preventDefault();
+      } else if (!mobile && event.key === "ArrowLeft") {
         stage.scrollBy({ left: -amount, behavior: "smooth" });
         setManualMode(true);
         event.preventDefault();
-      } else if (event.key === "ArrowRight") {
+      } else if (!mobile && event.key === "ArrowRight") {
         stage.scrollBy({ left: amount, behavior: "smooth" });
         setManualMode(true);
         event.preventDefault();
       } else if (event.key === "Home") {
-        stage.scrollTo({ left: 0, behavior: "smooth" });
+        stage.scrollTo(
+          mobile
+            ? { top: 0, behavior: "smooth" }
+            : { left: 0, behavior: "smooth" }
+        );
         setManualMode(true);
         event.preventDefault();
       } else if (event.key === "End") {
-        stage.scrollTo({ left: stage.scrollWidth, behavior: "smooth" });
+        stage.scrollTo(
+          mobile
+            ? { top: stage.scrollHeight, behavior: "smooth" }
+            : { left: stage.scrollWidth, behavior: "smooth" }
+        );
         setManualMode(true);
         event.preventDefault();
       }
@@ -701,8 +606,6 @@
     body().classList.remove("unicalli-complete");
     body().classList.add("unicalli-writing");
     setManualMode(false);
-    setMobileComposerOpen(false);
-    setMobileSettingsOpen(false);
     startTimer("准备中");
     return args;
   }
@@ -714,8 +617,6 @@
       "unicalli-ui-dormant"
     );
     setManualMode(false);
-    setMobileSettingsOpen(false);
-    setMobileComposerOpen(true);
     window.setTimeout(() => {
       const input = document.querySelector("#text-input textarea");
       if (input) input.focus();
@@ -857,56 +758,23 @@
     scheduleUiRest();
   }
 
-  // 移动端展开/收起/设置按钮：事件委托到 document（捕获阶段）。
-  // 兼容华为等旧 WebView：真实触摸可能不生成 click（被 Gradio Svelte
-  // 事件委托或浏览器 touch 处理拦截），故同时监听 pointerdown——
-  // pointer 事件不依赖 click 合成，触摸即触发。用时间窗口防双触发。
-  let lastMobileTap = 0;
-  function handleMobileTap(event) {
-    const now = Date.now();
-    if (now - lastMobileTap < 450) return true; // pointerdown 已处理，跳过后续 click
-    const composerToggle = event.target.closest(".mobile-composer-toggle");
-    if (composerToggle) {
-      lastMobileTap = now;
-      setMobileSettingsOpen(false);
-      setMobileComposerOpen(!state.mobileComposerOpen);
-      return true;
-    }
-    const settingsToggle = event.target.closest(".mobile-settings-toggle");
-    if (settingsToggle) {
-      lastMobileTap = now;
-      setMobileComposerOpen(false);
-      setMobileSettingsOpen(!state.mobileSettingsOpen);
-      return true;
-    }
-    return false;
-  }
   document.addEventListener("click", (event) => {
     wakeUi();
-    if (handleMobileTap(event)) {
-      event.preventDefault();
-      event.stopPropagation();
-      return;
-    }
     const rerollButton = event.target.closest(".segment-reroll");
-    if (rerollButton) {
-      event.preventDefault();
-      event.stopPropagation();
-      const index = Number(rerollButton.dataset.rerollIndex);
-      if (Number.isFinite(index)) triggerReroll(index);
-    }
-  }, true);
-  document.addEventListener("pointerdown", (event) => {
-    // 不 preventDefault：让 mousedown 默认行为（焦点转移 → blur textarea →
-    // 输入法收起）正常发生。只在 pointerdown 阶段执行逻辑以兼容
-    // 华为等不生成 click 的旧 WebView；click 由 450ms 窗口去重。
-    handleMobileTap(event);
+    if (!rerollButton) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const index = Number(rerollButton.dataset.rerollIndex);
+    if (Number.isFinite(index)) triggerReroll(index);
   }, true);
 
   ["pointermove", "touchstart", "keydown"].forEach((eventName) => {
     document.addEventListener(eventName, wakeUi, { passive: true });
   });
-  window.addEventListener("resize", syncResponsiveUi, { passive: true });
+  window.addEventListener("resize", () => {
+    syncSegmentOrderForLayout();
+    requestCaptionDepth();
+  }, { passive: true });
   document.addEventListener("fullscreenchange", wakeUi);
 
   window.UniCalli = window.UniCalliV4 = {
@@ -925,6 +793,5 @@
   root().dataset.unicalliTheme = "paper";
   bindStage();
   bindTextInputFilter();
-  ensureMobileControls();
   stopTimer("静候", false);
 })();

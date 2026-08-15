@@ -50,8 +50,12 @@ EXPORT_DIR.mkdir(parents=True, exist_ok=True)
 PROJECT = load_project_data(BASE_DIR)
 AUTHOR_LIST = PROJECT.author_list
 GENERATOR_SERVICE = GeneratorService(BASE_DIR)
-CSS = load_asset_text("unicalli_ui.css")
+DESKTOP_CSS = load_asset_text("unicalli_ui.css")
+MOBILE_CSS = load_asset_text("unicalli_mobile.css")
+CSS = f"{DESKTOP_CSS}\n\n{MOBILE_CSS}"
 INTERACTIONS_JS = load_asset_text("unicalli_ui.js")
+MOBILE_UI_JS = load_asset_text("unicalli_mobile.js")
+BOOTSTRAP_JS = f"{INTERACTIONS_JS}\n\n{MOBILE_UI_JS}"
 
 GRADIO_MAJOR = int(gr.__version__.split(".", 1)[0])
 BLOCKS_STYLE_KWARGS = {"css": CSS} if GRADIO_MAJOR < 6 else {}
@@ -804,7 +808,7 @@ with gr.Blocks(
         value="<span aria-hidden='true'></span>",
         elem_id="js-bootstrap",
         container=False,
-        js_on_load=INTERACTIONS_JS,
+        js_on_load=BOOTSTRAP_JS,
     )
 
     demo.load(
@@ -984,11 +988,9 @@ def _health():
 #      在移动端会持续占满主线程、耗电、甚至卡死页面。
 #   2) 该脚本没有任何视口/媒体查询判断，会在所有设备上无条件把
 #      composer-main-row 强制改成纵向堆叠布局，桌面端也会被误伤。
-#   3) unicalli_ui.css 中 @media (max-width: 480px) / (max-width: 640px) 已经用
-#      !important 覆盖了同样的内联变量与 transform（CSS !important 规则本身就能
-#      压过未加 !important 的内联样式，包括自定义属性），配合 unicalli_ui.js 中
-#      matchMedia 驱动的 mobile-composer 面板逻辑已经是完整、正确、按视口生效的方案，
-#      客户端 JS 补丁纯属多余且有害，予以移除，只保留必要的子路径尾斜杠重定向。
+#   3) 手机端布局现由 unicalli_mobile.css / unicalli_mobile.js 独立维护；
+#      unicalli_ui.css / unicalli_ui.js 只保留桌面视觉与跨端核心交互。
+#      同一组件不再被多组移动端媒体查询和脚本重复接管。
 _PREFIX_SCRIPT = (
     "<script>(function(){"
     "var p=location.pathname||'';"
@@ -1001,10 +1003,8 @@ _PREFIX_SCRIPT = (
     "    var ta=document.querySelector('#text-input textarea');"
     "    var info={};"
     "    info.w=innerWidth; info.h=innerHeight;"
-    "    info.mq640=matchMedia('(max-width: 640px)').matches;"
-    "    info.mq480=matchMedia('(max-width: 480px)').matches;"
-    "    info.mq390=matchMedia('(max-width: 390px)').matches;"
-    "    info.hasPseudo=CSS.supports('selector(:has(a))');"
+    "    info.mq767=matchMedia('(max-width: 767px)').matches;"
+            "    info.hasPseudo=CSS.supports('selector(:has(a))');"
     "    info.colorMix=CSS.supports('color','color-mix(in srgb, red, blue)');"
     "    info.backdrop=CSS.supports('backdrop-filter','blur(1px)');"
     "    info.cssLoaded=!!(css.getPropertyValue('--bronze').trim());"

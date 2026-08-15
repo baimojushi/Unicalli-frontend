@@ -1,0 +1,831 @@
+/*
+ * UniCalli Mobile UI
+ * -----------------
+ * Phone-only visual system. Desktop rules live in unicalli_ui.css.
+ * This file owns every layout decision at <= 767px.
+ */
+
+.mobile-composer-bar { display: none; }
+
+@media (max-width: 767px) {
+  :root {
+    --topbar-height: 56px;
+    --mobile-actions-height: 48px;
+    --mobile-gutter: 10px;
+    --mobile-stage-top: calc(var(--topbar-height) + var(--mobile-actions-height));
+    --mobile-dock-height: 94px;
+    --mobile-settings-height: 0px;
+    --mobile-vv-bottom: 0px;
+    --mobile-reserved-bottom: 104px;
+    --mobile-card-width: min(100%, 520px);
+    --mobile-art-height: clamp(360px, 61svh, 620px);
+  }
+
+  html,
+  body {
+    width: 100%;
+    min-height: 100%;
+    overflow: hidden !important;
+    overscroll-behavior: none;
+  }
+
+  body {
+    touch-action: manipulation;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .gradio-container,
+  #app-shell {
+    min-height: 100svh !important;
+    height: 100svh !important;
+    overflow: hidden !important;
+  }
+
+  /* Header */
+  #topbar {
+    z-index: 120;
+    height: var(--topbar-height);
+  }
+
+  .unicalli-topbar {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    height: var(--topbar-height);
+    padding: env(safe-area-inset-top, 0px) 13px 0;
+    border-bottom: 1px solid var(--line);
+    background:
+      linear-gradient(
+        105deg,
+        transparent 0 42%,
+        var(--bronze-faint) 52%,
+        transparent 64%
+      ),
+      var(--chrome-bg);
+    backdrop-filter: blur(18px) saturate(1.08);
+    -webkit-backdrop-filter: blur(18px) saturate(1.08);
+  }
+
+  .unicalli-topbar::after {
+    left: 12px;
+    right: 12px;
+  }
+
+  .topbar-mark { gap: 9px; }
+
+  .topbar-seal {
+    width: 30px;
+    height: 30px;
+    font-size: 16px;
+  }
+
+  .topbar-title strong {
+    font-size: 15px;
+    letter-spacing: .12em;
+  }
+
+  .topbar-title small {
+    display: block;
+    margin-top: 1px;
+    font-size: 8px;
+    letter-spacing: .15em;
+  }
+
+  .topbar-balance { display: none; }
+
+  #run-timer {
+    min-width: 64px;
+    height: 30px;
+    gap: 5px;
+    justify-content: flex-end;
+  }
+
+  #run-timer strong { font-size: 10px; }
+
+  #run-timer small {
+    max-width: 40px;
+    overflow: hidden;
+    font-size: 8px;
+    text-overflow: ellipsis;
+  }
+
+  /* Action rail */
+  #stage-controls {
+    position: fixed !important;
+    z-index: 118;
+    top: var(--topbar-height) !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    height: var(--mobile-actions-height) !important;
+    margin: 0 !important;
+    padding: 6px var(--mobile-gutter) !important;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center !important;
+    gap: 6px !important;
+    border-bottom: 1px solid var(--line) !important;
+    background: color-mix(
+      in srgb,
+      var(--chrome-bg) 96%,
+      transparent
+    ) !important;
+    box-shadow: 0 4px 16px rgba(51, 42, 29, .035) !important;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    transform: none !important;
+    opacity: 1 !important;
+  }
+
+  #stage-controls > * {
+    position: static !important;
+    inset: auto !important;
+    transform: none !important;
+    min-width: 0 !important;
+  }
+
+  #stage-controls > .form {
+    width: auto !important;
+    max-width: 148px !important;
+  }
+
+  #theme-mode {
+    height: 36px !important;
+    min-width: 0 !important;
+    padding: 2px !important;
+    border: 1px solid var(--line) !important;
+    border-radius: 999px !important;
+    background: var(--field-bg) !important;
+    box-shadow: none !important;
+  }
+
+  #theme-mode label {
+    min-width: 52px !important;
+    min-height: 30px !important;
+    padding: 0 8px !important;
+    border-radius: 999px !important;
+    font-size: 10px !important;
+  }
+
+  #stage-controls button {
+    width: auto !important;
+    min-width: 46px !important;
+    min-height: 36px !important;
+    padding: 0 9px !important;
+    border: 1px solid var(--line) !important;
+    border-radius: 999px !important;
+    background: var(--field-bg) !important;
+    color: var(--ink-2) !important;
+    box-shadow: none !important;
+    font-size: 10px !important;
+    letter-spacing: .04em;
+  }
+
+  #follow-current-btn { grid-column: 2; }
+  #fullscreen-btn { grid-column: 3; }
+
+  body.unicalli-ui-dormant.unicalli-writing #topbar,
+  body.unicalli-ui-dormant.unicalli-complete #topbar,
+  body.unicalli-ui-dormant.unicalli-writing #stage-controls,
+  body.unicalli-ui-dormant.unicalli-complete #stage-controls {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  /* Vertical reading stage. Bottom is dynamically reserved by mobile JS. */
+  #scroll-stage-host {
+    position: fixed !important;
+    z-index: 1;
+    top: var(--mobile-stage-top) !important;
+    right: 0 !important;
+    bottom: calc(
+      var(--mobile-reserved-bottom) + env(safe-area-inset-bottom, 0px)
+    ) !important;
+    left: 0 !important;
+    height: auto !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    transition:
+      bottom .22s cubic-bezier(.2,.78,.2,1),
+      background .35s ease;
+  }
+
+  #scroll-stage-host::before,
+  #scroll-stage-host::after {
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    height: 26px !important;
+  }
+
+  #scroll-stage-host::before {
+    top: 0 !important;
+    bottom: auto !important;
+    background: linear-gradient(
+      180deg,
+      var(--edge-fade),
+      transparent
+    ) !important;
+  }
+
+  #scroll-stage-host::after {
+    top: auto !important;
+    bottom: 0 !important;
+    background: linear-gradient(
+      0deg,
+      var(--edge-fade),
+      transparent
+    ) !important;
+  }
+
+  .scroll-stage-shell {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    overscroll-behavior-y: contain;
+    scroll-behavior: smooth;
+    scroll-snap-type: y proximity;
+    scrollbar-width: none;
+    cursor: default;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .scroll-stage-shell::-webkit-scrollbar { display: none; }
+  .scroll-stage-shell:active { cursor: default; }
+
+  .scroll-track {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: flex-start !important;
+    align-items: center !important;
+    width: 100% !important;
+    min-width: 100% !important;
+    min-height: 100% !important;
+    height: max-content !important;
+    padding: 22px 12px 32px !important;
+    gap: 16px !important;
+  }
+
+  .scroll-track.is-empty {
+    justify-content: center !important;
+  }
+
+  .stage-empty-copy {
+    padding: 22px 34px;
+  }
+
+  .stage-empty-copy::before {
+    width: min(68vw, 290px);
+    margin-bottom: 22px;
+  }
+
+  .stage-empty-copy strong {
+    font-size: clamp(22px, 7vw, 30px);
+    letter-spacing: .19em;
+  }
+
+  .stage-empty-copy p {
+    max-width: 260px;
+    margin-top: 12px;
+    font-size: 11px;
+    line-height: 1.75;
+    letter-spacing: .05em;
+  }
+
+  .stage-empty-index { font-size: 9px; }
+
+  /* Segment cards */
+  .scroll-segment {
+    width: var(--mobile-card-width) !important;
+    max-width: 520px !important;
+    grid-template-rows: auto var(--mobile-art-height) !important;
+    align-items: stretch !important;
+    margin: 0 !important;
+    overflow: hidden;
+    border: 1px solid color-mix(
+      in srgb,
+      var(--line) 86%,
+      transparent
+    );
+    border-radius: 5px;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.13), transparent 18%),
+      color-mix(in srgb, var(--paper) 72%, transparent);
+    box-shadow: 0 12px 34px rgba(51, 42, 29, .055);
+    scroll-snap-align: start;
+    scroll-margin-top: 14px;
+  }
+
+  .scroll-segment + .scroll-segment {
+    margin-left: 0 !important;
+  }
+
+  .segment-caption-wrap {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 48px;
+    align-items: stretch !important;
+    overflow: visible;
+  }
+
+  .segment-caption {
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) auto !important;
+    grid-template-rows: 1fr !important;
+    align-items: center !important;
+    gap: 10px !important;
+    min-height: 48px;
+    padding: 7px 8px 7px 12px !important;
+    border-bottom: 1px solid var(--line);
+    opacity: var(--caption-opacity) !important;
+    transform: none !important;
+  }
+
+  .segment-caption::after { display: none; }
+
+  .caption-meta {
+    width: auto !important;
+    justify-content: flex-start !important;
+    gap: 5px !important;
+  }
+
+  .caption-index,
+  .caption-state {
+    font-size: 8px !important;
+  }
+
+  .caption-text {
+    min-width: 0;
+    font-size: clamp(
+      12px,
+      var(--caption-font-size),
+      14px
+    ) !important;
+    letter-spacing: .14em;
+    text-align: center;
+  }
+
+  .segment-reroll {
+    position: static !important;
+    left: auto !important;
+    bottom: auto !important;
+    min-width: 50px !important;
+    min-height: 34px !important;
+    padding: 0 8px !important;
+    border: 1px solid var(--line) !important;
+    border-radius: 999px !important;
+    background: var(--field-bg) !important;
+    color: var(--bronze) !important;
+    font-size: 10px !important;
+    opacity: .96 !important;
+    transform: none !important;
+    touch-action: manipulation;
+  }
+
+  .segment-reroll[disabled] {
+    opacity: .32 !important;
+    visibility: visible !important;
+    pointer-events: none !important;
+  }
+
+  .scroll-segment.is-entering .segment-caption {
+    animation: mobile-caption-in .34s ease both !important;
+  }
+
+  @keyframes mobile-caption-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .segment-image-wrap {
+    width: 100% !important;
+    height: var(--mobile-art-height) !important;
+    aspect-ratio: auto !important;
+    background:
+      radial-gradient(
+        circle at 50% 44%,
+        color-mix(in srgb, var(--bronze) 4%, transparent),
+        transparent 52%
+      ),
+      var(--stage-bg);
+  }
+
+  .segment-final-image,
+  .segment-preview-image {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+  }
+
+  /* Composer workspace */
+  #composer-dock {
+    position: fixed !important;
+    z-index: 112;
+    top: auto !important;
+    right: var(--mobile-gutter) !important;
+    bottom: calc(
+      var(--mobile-vv-bottom) +
+      env(safe-area-inset-bottom, 0px) +
+      8px
+    ) !important;
+    left: var(--mobile-gutter) !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: min(54svh, 520px) !important;
+    margin: 0 !important;
+    padding: 0 10px 8px !important;
+    gap: 7px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    border: 1px solid color-mix(
+      in srgb,
+      var(--line-strong) 74%,
+      transparent
+    ) !important;
+    border-radius: 16px !important;
+    background: color-mix(
+      in srgb,
+      var(--composer-bg) 98%,
+      transparent
+    ) !important;
+    box-shadow: 0 18px 52px rgba(32, 27, 20, .14) !important;
+    backdrop-filter: blur(22px) saturate(1.08);
+    -webkit-backdrop-filter: blur(22px) saturate(1.08);
+    transform: none !important;
+    opacity: 1 !important;
+    transition:
+      max-height .22s ease,
+      opacity .2s ease,
+      bottom .18s ease,
+      background .35s ease;
+  }
+
+  .mobile-composer-bar {
+    position: sticky;
+    z-index: 4;
+    top: 0;
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 6px;
+    min-height: 50px;
+    margin: 0 -10px;
+    padding: 5px 7px 5px 12px;
+    border-bottom: 1px solid color-mix(
+      in srgb,
+      var(--line) 72%,
+      transparent
+    );
+    background: color-mix(
+      in srgb,
+      var(--composer-bg) 98%,
+      transparent
+    );
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+  }
+
+  .mobile-composer-title {
+    min-width: 0;
+    display: grid;
+    gap: 1px;
+    font-family: var(--serif);
+  }
+
+  .mobile-composer-title strong {
+    overflow: hidden;
+    color: var(--ink);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: .1em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-composer-title small {
+    overflow: hidden;
+    color: var(--ink-3);
+    font-size: 8px;
+    letter-spacing: .04em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .mobile-settings-toggle,
+  .mobile-composer-toggle {
+    display: inline-grid !important;
+    place-items: center;
+    min-width: 46px !important;
+    min-height: 38px !important;
+    padding: 0 8px !important;
+    border: 1px solid var(--line) !important;
+    border-radius: 999px !important;
+    background: var(--field-bg) !important;
+    color: var(--ink-2) !important;
+    box-shadow: none !important;
+    font: 10px var(--serif) !important;
+    letter-spacing: .05em;
+  }
+
+  .mobile-composer-toggle {
+    min-width: 38px !important;
+    width: 38px !important;
+    padding: 0 !important;
+    font-family: var(--sans) !important;
+  }
+
+  .mobile-composer-toggle::before { content: "收"; }
+
+  body.unicalli-mobile-composer-collapsed
+  .mobile-composer-toggle::before {
+    content: "展";
+  }
+
+  .composer-main-row {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    max-height: 360px;
+    margin: 0 !important;
+    overflow: visible !important;
+    opacity: 1;
+    transform: none !important;
+    transition:
+      max-height .2s ease,
+      opacity .16s ease;
+  }
+
+  .composer-main-row > * {
+    position: static !important;
+    inset: auto !important;
+    transform: none !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    flex: 0 0 auto !important;
+  }
+
+  #text-input textarea {
+    height: auto !important;
+    min-height: 82px !important;
+    max-height: 126px !important;
+    padding: 11px 12px !important;
+    border-radius: 8px !important;
+    font-size: 16px !important;
+    line-height: 1.55 !important;
+  }
+
+  .selector-stack {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important;
+    gap: 8px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .selector-stack > * { min-width: 0 !important; }
+
+  #author-dropdown .wrap,
+  #font-dropdown .wrap,
+  #author-tag .wrap {
+    min-height: 44px;
+    border-radius: 8px !important;
+  }
+
+  #generate-btn {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 50px !important;
+    border-radius: 8px !important;
+    font-size: 15px !important;
+  }
+
+  #draft-board {
+    max-height: 74px;
+    padding: 0 1px 3px !important;
+    overflow: hidden;
+  }
+
+  .draft-meta { margin-bottom: 4px; }
+
+  .draft-tokens {
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+
+  .draft-tokens::-webkit-scrollbar { display: none; }
+  .draft-token { scroll-snap-align: start; }
+
+  .composer-status-row {
+    min-height: 40px;
+    gap: 4px !important;
+    padding: 0 2px !important;
+    border-top: 1px solid color-mix(
+      in srgb,
+      var(--line) 68%,
+      transparent
+    );
+  }
+
+  #status-line p { font-size: 10px; }
+
+  #edit-again-btn,
+  #download-scroll-btn {
+    min-height: 36px !important;
+    padding-inline: 8px !important;
+  }
+
+  body.unicalli-mobile-composer-collapsed #composer-dock,
+  body.unicalli-writing #composer-dock,
+  body.unicalli-complete #composer-dock {
+    max-height: 102px !important;
+  }
+
+  body.unicalli-mobile-composer-collapsed .composer-main-row,
+  body.unicalli-mobile-composer-collapsed #draft-board,
+  body.unicalli-writing .composer-main-row,
+  body.unicalli-writing #draft-board,
+  body.unicalli-complete .composer-main-row,
+  body.unicalli-complete #draft-board {
+    max-height: 0 !important;
+    margin: 0 !important;
+    padding-block: 0 !important;
+    opacity: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+  }
+
+  /* Settings workspace */
+  #side-drawers {
+    position: fixed !important;
+    z-index: 110;
+    top: auto !important;
+    right: var(--mobile-gutter) !important;
+    bottom: calc(
+      var(--mobile-vv-bottom) +
+      var(--mobile-dock-height) +
+      env(safe-area-inset-bottom, 0px) +
+      16px
+    ) !important;
+    left: var(--mobile-gutter) !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: min(46svh, 500px) !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow-y: auto !important;
+    border: 1px solid color-mix(
+      in srgb,
+      var(--line-strong) 70%,
+      transparent
+    ) !important;
+    border-radius: 14px !important;
+    background: color-mix(
+      in srgb,
+      var(--composer-bg) 99%,
+      transparent
+    ) !important;
+    box-shadow: 0 14px 44px rgba(32, 27, 20, .12) !important;
+    opacity: 0 !important;
+    transform: translateY(10px) !important;
+    pointer-events: none !important;
+    transition:
+      opacity .18s ease,
+      transform .2s ease,
+      bottom .18s ease;
+  }
+
+  body.unicalli-mobile-settings-open #side-drawers {
+    opacity: 1 !important;
+    transform: none !important;
+    pointer-events: auto !important;
+  }
+
+  body.unicalli-writing #side-drawers,
+  body.unicalli-complete #side-drawers {
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+
+  #preferences-drawer > .label-wrap,
+  #advanced-drawer > .label-wrap {
+    min-height: 48px !important;
+    padding: 11px 13px !important;
+    font-size: 12px !important;
+  }
+
+  .preference-tools {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+
+  #author-tag {
+    grid-column: 1 / -1;
+    min-width: 0 !important;
+  }
+
+  #favorite-author-btn,
+  #save-author-tag-btn {
+    min-height: 42px !important;
+  }
+
+  #favorite-only { min-width: 0 !important; }
+  .preference-summary { padding: 8px 10px 10px; }
+
+  /* Phone input / touch standards */
+  button,
+  .gr-button,
+  [role="button"] {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+
+  #seed-info,
+  #event-bus {
+    display: none !important;
+  }
+}
+
+@media (max-width: 390px) {
+  :root {
+    --mobile-gutter: 8px;
+    --mobile-art-height: clamp(330px, 58svh, 520px);
+  }
+
+  .topbar-title small,
+  #run-timer small {
+    display: none;
+  }
+
+  #stage-controls { gap: 4px !important; }
+
+  #theme-mode label {
+    min-width: 46px !important;
+    padding-inline: 6px !important;
+  }
+
+  #stage-controls button {
+    min-width: 42px !important;
+    padding-inline: 7px !important;
+  }
+
+  .scroll-track { padding-inline: 9px !important; }
+
+  .segment-caption {
+    gap: 7px !important;
+    padding-left: 9px !important;
+  }
+
+  .segment-reroll {
+    min-width: 46px !important;
+    padding-inline: 6px !important;
+  }
+
+  .mobile-composer-title small { display: none; }
+}
+
+@supports not (color: color-mix(in srgb, red, blue)) {
+  @media (max-width: 767px) {
+    #stage-controls {
+      background: rgba(244, 240, 231, .96) !important;
+    }
+
+    html[data-unicalli-theme="inkstone"] #stage-controls {
+      background: rgba(28, 25, 20, .96) !important;
+    }
+
+    #composer-dock,
+    #side-drawers,
+    .mobile-composer-bar {
+      background: rgba(249, 246, 238, .98) !important;
+    }
+
+    html[data-unicalli-theme="inkstone"] #composer-dock,
+    html[data-unicalli-theme="inkstone"] #side-drawers,
+    html[data-unicalli-theme="inkstone"] .mobile-composer-bar {
+      background: rgba(31, 28, 22, .98) !important;
+    }
+
+    .scroll-segment {
+      background: rgba(250, 247, 239, .76) !important;
+    }
+
+    html[data-unicalli-theme="inkstone"] .scroll-segment {
+      background: rgba(35, 32, 25, .76) !important;
+    }
+  }
+}
