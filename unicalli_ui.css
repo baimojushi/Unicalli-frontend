@@ -1386,7 +1386,29 @@ body.unicalli-complete #side-drawers {
     gap: 6px !important;
     bottom: env(safe-area-inset-bottom, 0);
   }
-  .composer-main-row { flex-direction: column !important; gap: 6px !important; }
+  .composer-main-row {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+  }
+  /* gradio 6 内部用绝对定位 + transform（--start-left/--start-top 变量）布局
+     composer-main-row 子元素，强制覆盖为纵向堆叠 + 全宽 */
+  .composer-main-row > * {
+    position: static !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    transform: none !important;
+    --start-left: 0px !important;
+    --start-top: 0px !important;
+    --start-width: auto !important;
+    --start-height: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: 1 1 100% !important;
+    box-sizing: border-box !important;
+  }
   #text-input { min-width: 100% !important; }
   #text-input textarea {
     height: 48px !important;
