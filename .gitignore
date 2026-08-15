@@ -197,3 +197,4 @@ output*.png
 smoke_dual_fp.png
 _gen_status.txt
 new_css.txt
+"*.zip"  
