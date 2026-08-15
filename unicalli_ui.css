@@ -1887,27 +1887,21 @@ body::after {
     font-size: 10px !important;
   }
 
-  .mobile-composer-toggle::after { content: "展开"; }
-  body.unicalli-mobile-composer-open .mobile-composer-toggle::after { content: "收起"; }
+  /* 默认展开可见：不依赖 JS 先执行完才能看到输入框/下拉菜单/落笔按钮，
+     避免移动端首屏因脚本时序（组件尚未挂载、matchMedia 判断延迟等）
+     导致题写区不可见、无法交互。折叠改为需要显式添加
+     unicalli-mobile-composer-collapsed（用户点“收起”，或写作/完成态）。 */
+  .mobile-composer-toggle::after { content: "收起"; }
+  body.unicalli-mobile-composer-collapsed .mobile-composer-toggle::after { content: "展开"; }
   .mobile-composer-toggle { font-size: 0 !important; }
   .mobile-composer-toggle::after { font-size: 10px; }
 
-  body.unicalli-mobile-composer-open .mobile-composer-bar {
-    border-bottom-color: var(--line);
+  body.unicalli-mobile-composer-collapsed .mobile-composer-bar {
+    border-bottom-color: transparent;
   }
 
   .composer-main-row,
   #draft-board {
-    max-height: 0 !important;
-    margin: 0 !important;
-    padding-inline: 12px !important;
-    opacity: 0 !important;
-    overflow: hidden !important;
-    transform: translateY(8px) !important;
-    pointer-events: none !important;
-  }
-
-  body.unicalli-mobile-composer-open:not(.unicalli-writing):not(.unicalli-complete) .composer-main-row {
     display: flex !important;
     flex-direction: column !important;
     gap: 8px !important;
@@ -1918,13 +1912,32 @@ body::after {
     transform: none !important;
     pointer-events: auto !important;
   }
-
-  body.unicalli-mobile-composer-open:not(.unicalli-writing):not(.unicalli-complete) #draft-board {
+  #draft-board {
     max-height: 90px !important;
     padding-top: 8px !important;
-    opacity: 1 !important;
-    transform: none !important;
-    pointer-events: auto !important;
+  }
+
+  body.unicalli-mobile-composer-collapsed:not(.unicalli-writing):not(.unicalli-complete) .composer-main-row,
+  body.unicalli-writing .composer-main-row,
+  body.unicalli-complete .composer-main-row {
+    max-height: 0 !important;
+    margin: 0 !important;
+    padding-inline: 12px !important;
+    padding-top: 0 !important;
+    opacity: 0 !important;
+    overflow: hidden !important;
+    transform: translateY(8px) !important;
+    pointer-events: none !important;
+  }
+
+  body.unicalli-mobile-composer-collapsed:not(.unicalli-writing):not(.unicalli-complete) #draft-board,
+  body.unicalli-writing #draft-board,
+  body.unicalli-complete #draft-board {
+    max-height: 0 !important;
+    padding-top: 0 !important;
+    opacity: 0 !important;
+    transform: translateY(6px) !important;
+    pointer-events: none !important;
   }
 
   .composer-main-row > * {

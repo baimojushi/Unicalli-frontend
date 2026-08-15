@@ -53,13 +53,18 @@
     }
   }
 
+  // 展开/收起改为在 body 上维护 "collapsed" 类而不是 "open" 类：
+  // CSS 中题写区默认可见（见 unicalli_ui.css 对应 @media 块），这里只在
+  // 用户主动收起、或写作/完成态时补一个 collapsed 类。即便本函数因为任何
+  // 原因未能及时执行（组件尚未挂载、matchMedia 时序问题等），题写区仍然
+  // 保持默认可见，不会出现"看不到输入框"的情况。
   function setMobileComposerOpen(open) {
     state.mobileComposerOpen = Boolean(open);
     if (!isMobileLayout()) {
-      body().classList.remove("unicalli-mobile-composer-open");
+      body().classList.remove("unicalli-mobile-composer-collapsed");
       return;
     }
-    body().classList.toggle("unicalli-mobile-composer-open", state.mobileComposerOpen);
+    body().classList.toggle("unicalli-mobile-composer-collapsed", !state.mobileComposerOpen);
     const button = document.querySelector(".mobile-composer-toggle");
     if (button) button.setAttribute("aria-expanded", String(state.mobileComposerOpen));
   }
@@ -120,7 +125,7 @@
   function syncResponsiveUi() {
     if (!isMobileLayout()) {
       body().classList.remove(
-        "unicalli-mobile-composer-open",
+        "unicalli-mobile-composer-collapsed",
         "unicalli-mobile-settings-open"
       );
       syncMobileStageCopy();
