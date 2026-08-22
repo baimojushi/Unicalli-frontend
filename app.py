@@ -41,6 +41,7 @@ from unicalli_ui import (
     render_stage_shell,
     segment_payloads,
 )
+from unicalli_mobile_ui import render_mobile_stage_shell
 
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -52,17 +53,17 @@ AUTHOR_LIST = PROJECT.author_list
 GENERATOR_SERVICE = GeneratorService(BASE_DIR)
 DESKTOP_CSS = load_asset_text("unicalli_ui.css")
 MOBILE_CSS = load_asset_text("unicalli_mobile.css")
-CSS = f"{DESKTOP_CSS}\n\n{MOBILE_CSS}"
+CSS = ["unicalli_ui.css", "unicalli_mobile.css"]
 INTERACTIONS_JS = load_asset_text("unicalli_ui.js")
-MOBILE_UI_JS = load_asset_text("unicalli_mobile.js")
-BOOTSTRAP_JS = f"{INTERACTIONS_JS}\n\n{MOBILE_UI_JS}"
+MOBILE_INTERACTIONS_JS = load_asset_text("unicalli_mobile.js")
+BOOTSTRAP_JS = f"{INTERACTIONS_JS}\n\n{MOBILE_INTERACTIONS_JS}"
 
 GRADIO_MAJOR = int(gr.__version__.split(".", 1)[0])
 BLOCKS_STYLE_KWARGS = {"css": CSS} if GRADIO_MAJOR < 6 else {}
 
 INITIAL_AUTHOR = (
-    "黄庭坚"
-    if "黄庭坚" in PROJECT.author_fonts
+    "黄庭�?
+    if "黄庭�? in PROJECT.author_fonts
     else (AUTHOR_LIST[0] if AUTHOR_LIST else SYNTHETIC_AUTHOR)
 )
 INITIAL_TEXT = "山川异域风月同天"
@@ -138,7 +139,7 @@ def _get_session(session_id: Any) -> ScrollSession:
     with SESSION_LOCK:
         session = SESSION_STORE.get(key)
         if session is None:
-            raise gr.Error("这幅长卷已过期，请另题一卷。")
+            raise gr.Error("这幅长卷已过期，请另题一卷�?)
         session.updated_at = time.time()
         return session
 
@@ -156,7 +157,7 @@ def _seed_summary(session: ScrollSession) -> str:
         overrides.append(f"{index + 1:02d}:{int(seed_value)}")
     suffix = " · 各段种子依次递增"
     if overrides:
-        return f"基础 Seed {session.base_seed}{suffix} · 重写段 {' / '.join(overrides)}"
+        return f"基础 Seed {session.base_seed}{suffix} · 重写�?{' / '.join(overrides)}"
     return f"基础 Seed {session.base_seed}{suffix}"
 
 
@@ -315,7 +316,7 @@ def generation_ui_stream(
     clean_text = sanitize_han_text(text)
     segments = split_text_into_segments(clean_text)
     if not segments:
-        raise gr.Error("请先录入汉字。")
+        raise gr.Error("请先录入汉字�?)
 
     request = GenerationRequest(
         text=clean_text,
@@ -336,8 +337,8 @@ def generation_ui_stream(
             segments=segment_payloads(segments),
         ),
         render_draft_strip(segments),
-        "起卷中。",
-        f"共 {len(segments)} 段",
+        "起卷中�?,
+        f"�?{len(segments)} �?,
         _download_update(None),
         session.session_id,
     )
@@ -402,7 +403,7 @@ def generation_ui_stream(
 
             elif event.type == "segment_completed" and event.segment_index is not None:
                 if event.image is None:
-                    raise RuntimeError("段落完成事件缺少图像。")
+                    raise RuntimeError("段落完成事件缺少图像�?)
                 active_index = int(event.segment_index)
                 final_image = event.image
                 with SESSION_LOCK:
@@ -464,7 +465,7 @@ def generation_ui_stream(
                 active_index=None,
                 completed_indices=_completed_indices(session),
             ),
-            f"生成已停止 · {error}",
+            f"生成已停�?· {error}",
             _seed_summary(session),
             gr.skip(),
             gr.skip(),
@@ -481,16 +482,16 @@ def reroll_segment_stream(
         token = str(target_segment).strip().split(":", 1)[0]
         target_index = int(float(token))
     except Exception as error:
-        raise gr.Error("无法识别要重写的段落。") from error
+        raise gr.Error("无法识别要重写的段落�?) from error
 
     if target_index < 0 or target_index >= len(session.segments):
-        raise gr.Error("目标段落超出范围。")
+        raise gr.Error("目标段落超出范围�?)
     if session.images[target_index] is None:
-        raise gr.Error("这一段尚未写成，暂不能重写。")
+        raise gr.Error("这一段尚未写成，暂不能重写�?)
 
     with SESSION_LOCK:
         if session.busy:
-            raise gr.Error("当前仍有生成任务，请稍后再重写。")
+            raise gr.Error("当前仍有生成任务，请稍后再重写�?)
         session.busy = True
 
     source_segment = session.segments[target_index]
@@ -518,7 +519,7 @@ def reroll_segment_stream(
             active_index=target_index,
             completed_indices=_completed_indices(session),
         ),
-        f"第 {target_index + 1} 段 · 准备重写",
+        f"�?{target_index + 1} �?· 准备重写",
         _seed_summary(session),
         _download_update(None),
     )
@@ -540,7 +541,7 @@ def reroll_segment_stream(
                     ),
                     gr.skip(),
                     (
-                        f"第 {target_index + 1} 段 · 显墨 "
+                        f"�?{target_index + 1} �?· 显墨 "
                         f"{min((event.step or 0) + 1, event.total_steps or 1)}/"
                         f"{event.total_steps or 1}"
                     ),
@@ -550,7 +551,7 @@ def reroll_segment_stream(
 
             elif event.type == "segment_completed":
                 if event.image is None:
-                    raise RuntimeError("重写完成事件缺少图像。")
+                    raise RuntimeError("重写完成事件缺少图像�?)
                 replacement = event.image
 
                 # Transaction boundary: replace the old image only after success.
@@ -572,7 +573,7 @@ def reroll_segment_stream(
                         session.segments,
                         completed_indices=_completed_indices(session),
                     ),
-                    f"第 {target_index + 1} 段 · 重写完成",
+                    f"�?{target_index + 1} �?· 重写完成",
                     _seed_summary(session),
                     _download_update(export_path),
                 )
@@ -594,11 +595,62 @@ def reroll_segment_stream(
                 session.segments,
                 completed_indices=_completed_indices(session),
             ),
-            f"第 {target_index + 1} 段 · 重写未成，原图已保留 · {error}",
+            f"�?{target_index + 1} �?· 重写未成，原图已保留 · {error}",
             _seed_summary(session),
             gr.skip(),
         )
         raise gr.Error(str(error)) from error
+
+
+def generation_ui_stream_dual(
+    text: str,
+    author_dropdown: str,
+    font_style: str,
+    num_steps: int,
+    seed: int,
+    random_seed: bool,
+    quant_mode: str,
+    background_mode: str,
+):
+    """Mirror generation UI updates into desktop and mobile presentation trees."""
+    for event, draft, status, seed_summary, download, session_id in generation_ui_stream(
+        text,
+        author_dropdown,
+        font_style,
+        num_steps,
+        seed,
+        random_seed,
+        quant_mode,
+        background_mode,
+    ):
+        yield (
+            event,
+            draft,
+            status,
+            seed_summary,
+            download,
+            session_id,
+            draft,
+            status,
+            download,
+        )
+
+
+def reroll_segment_stream_dual(session_id: str, target_segment: Any):
+    """Mirror reroll status/download updates into both presentation trees."""
+    for event, draft, status, seed_summary, download in reroll_segment_stream(
+        session_id, target_segment
+    ):
+        yield (
+            event,
+            draft,
+            status,
+            seed_summary,
+            download,
+            draft,
+            status,
+            download,
+        )
 
 
 def update_background_export(session_id: str, background_mode: str):
@@ -611,6 +663,11 @@ def update_background_export(session_id: str, background_mode: str):
         session.background_mode = background_mode
     export_path = _export_session(session, session.base_seed)
     return _download_update(export_path) if export_path else gr.skip()
+
+
+def update_background_export_pair(session_id: str, background_mode: str):
+    update = update_background_export(session_id, background_mode)
+    return update, update, background_mode
 
 
 with gr.Blocks(
@@ -629,14 +686,14 @@ with gr.Blocks(
         """
         <div class="unicalli-topbar">
           <div class="topbar-mark">
-            <span class="topbar-seal" aria-hidden="true">翰</span>
+            <span class="topbar-seal" aria-hidden="true">�?/span>
             <span class="topbar-title">
               <strong>UniCalli</strong>
               <small>数字长卷</small>
             </span>
           </div>
           <div id="run-timer" aria-live="polite">
-            <strong>00:00</strong><small>静候</small>
+            <strong>00:00</strong><small>静�?/small>
           </div>
           <span class="topbar-balance" aria-hidden="true"></span>
         </div>
@@ -662,7 +719,7 @@ with gr.Blocks(
                 elem_id="theme-mode",
             )
             follow_current_btn = gr.Button(
-                "回到当前段", size="sm", elem_id="follow-current-btn"
+                "回到当前�?, size="sm", elem_id="follow-current-btn"
             )
             fullscreen_btn = gr.Button(
                 "全屏展卷", size="sm", elem_id="fullscreen-btn"
@@ -715,10 +772,10 @@ with gr.Blocks(
 
             with gr.Row(elem_classes=["composer-status-row"]):
                 generation_status = gr.Markdown(
-                    "长卷待题。", elem_id="status-line"
+                    "长卷待题�?, elem_id="status-line"
                 )
                 edit_again_btn = gr.Button(
-                    "另题一卷", size="sm", elem_id="edit-again-btn"
+                    "另题一�?, size="sm", elem_id="edit-again-btn"
                 )
                 download_btn = gr.DownloadButton(
                     "导出长卷",
@@ -736,13 +793,13 @@ with gr.Blocks(
             ):
                 with gr.Row(elem_classes=["preference-tools"]):
                     favorite_author_btn = gr.Button(
-                        "☆ 收藏",
+                        "�?收藏",
                         size="sm",
                         elem_id="favorite-author-btn",
                     )
                     author_tag = gr.Textbox(
                         label="书家标注",
-                        placeholder="常用、苍劲、待试……",
+                        placeholder="常用、苍劲、待试…�?,
                         lines=1,
                         max_lines=1,
                         elem_id="author-tag",
@@ -787,7 +844,7 @@ with gr.Blocks(
                     choices=[
                         "8-bit（推荐）",
                         "4-bit",
-                        "全精度",
+                        "全精�?,
                     ],
                     value="8-bit（推荐）",
                 )
@@ -802,6 +859,204 @@ with gr.Blocks(
         )
         reroll_target = gr.Textbox(
             value="", lines=1, elem_id="reroll-target"
+        )
+
+    # ------------------------------------------------------------------
+    # Phone UI: a separate component tree with its own information architecture.
+    # It shares generation/session functions with desktop and never overlays it.
+    # ------------------------------------------------------------------
+    with gr.Column(elem_id="mobile-app"):
+        with gr.Column(elem_id="mobile-compose-screen"):
+            with gr.Row(elem_classes=["mobile-nav-row"]):
+                gr.HTML(
+                    """
+                    <div class="mobile-brand">
+                      <span class="mobile-brand-seal" aria-hidden="true">�?/span>
+                      <span class="mobile-brand-copy">
+                        <strong>UniCalli</strong><small>数字长卷</small>
+                      </span>
+                    </div>
+                    """,
+                    container=False,
+                )
+                mobile_open_settings = gr.Button(
+                    "设置", size="sm", elem_id="mobile-open-settings"
+                )
+
+            with gr.Column(elem_id="mobile-compose-scroll"):
+                gr.HTML(
+                    """
+                    <div class="mobile-compose-intro">
+                      <em>掌中册页</em>
+                      <h1>题写一�?/h1>
+                      <p>只录汉字。每五字成一段，落笔后进入独立阅卷界面�?/p>
+                    </div>
+                    """,
+                    container=False,
+                )
+                with gr.Column(elem_classes=["mobile-compose-form"]):
+                    gr.HTML('<div class="mobile-field-caption">题写内容</div>', container=False)
+                    mobile_text_input = gr.Textbox(
+                        value=INITIAL_TEXT,
+                        placeholder="山川异域风月同天",
+                        label="题写内容",
+                        show_label=False,
+                        lines=4,
+                        max_lines=7,
+                        autofocus=False,
+                        elem_id="mobile-text-input",
+                    )
+                    with gr.Row(elem_classes=["mobile-choice-row"]):
+                        mobile_author_dropdown = gr.Dropdown(
+                            choices=[SYNTHETIC_AUTHOR] + AUTHOR_LIST,
+                            value=INITIAL_AUTHOR,
+                            label="书家",
+                            show_label=True,
+                            elem_id="mobile-author-dropdown",
+                        )
+                        mobile_font_style = gr.Dropdown(
+                            choices=INITIAL_FONT_CHOICES,
+                            value=(INITIAL_FONT_CHOICES[0] if INITIAL_FONT_CHOICES else None),
+                            label="书体",
+                            show_label=True,
+                            elem_id="mobile-font-dropdown",
+                        )
+                    mobile_draft_board = gr.HTML(
+                        value=preview_text(INITIAL_TEXT),
+                        elem_id="mobile-draft-board",
+                        container=False,
+                    )
+                    mobile_generate_btn = gr.Button(
+                        "落笔",
+                        variant="primary",
+                        elem_id="mobile-generate-btn",
+                    )
+                    gr.HTML(
+                        '<div class="mobile-compose-footnote">生成参数与书家偏好收纳在设置页，不占用题写空间�?/div>',
+                        container=False,
+                    )
+
+        with gr.Column(elem_id="mobile-settings-screen"):
+            with gr.Row(elem_classes=["mobile-nav-row"]):
+                mobile_settings_back = gr.Button(
+                    "返回", size="sm", elem_id="mobile-settings-back"
+                )
+                gr.HTML(
+                    """
+                    <div class="mobile-brand">
+                      <span class="mobile-brand-copy">
+                        <strong>设置</strong><small>卷面 · 书家 · 生成</small>
+                      </span>
+                    </div>
+                    """,
+                    container=False,
+                )
+            with gr.Column(elem_id="mobile-settings-scroll"):
+                with gr.Column(elem_classes=["mobile-settings-body"]):
+                    gr.HTML(
+                        """
+                        <div class="mobile-settings-heading">
+                          <strong>创作设置</strong>
+                          <small>这里是独立页面。返回题写后，设置不会覆盖输入或作品�?/small>
+                        </div>
+                        """,
+                        container=False,
+                    )
+                    with gr.Column(elem_classes=["mobile-settings-section"]):
+                        gr.HTML('<div class="mobile-settings-section-title">卷面</div>', container=False)
+                        mobile_theme_mode = gr.Radio(
+                            choices=["纸白", "砚黑"],
+                            value="纸白",
+                            label="卷面",
+                            show_label=False,
+                            elem_id="mobile-theme-mode",
+                        )
+
+                    with gr.Column(elem_classes=["mobile-settings-section"]):
+                        gr.HTML('<div class="mobile-settings-section-title">书家偏好</div>', container=False)
+                        mobile_favorite_only = gr.Checkbox(
+                            label="只看收藏",
+                            value=False,
+                            elem_id="mobile-favorite-only",
+                        )
+                        mobile_author_tag = gr.Textbox(
+                            label="当前书家标注",
+                            placeholder="常用、苍劲、待试…�?,
+                            lines=1,
+                            max_lines=1,
+                            elem_id="mobile-author-tag",
+                        )
+                        with gr.Row(elem_classes=["mobile-settings-actions"]):
+                            mobile_favorite_author_btn = gr.Button(
+                                "�?收藏", size="sm", elem_id="mobile-favorite-author-btn"
+                            )
+                            mobile_save_author_tag_btn = gr.Button(
+                                "保存标注", size="sm", elem_id="mobile-save-author-tag-btn"
+                            )
+                        mobile_preference_summary = gr.HTML(
+                            value=render_author_preference_summary(DEFAULT_PREFERENCES),
+                            elem_id="mobile-preference-summary",
+                            container=False,
+                        )
+
+                    with gr.Column(elem_classes=["mobile-settings-section"]):
+                        gr.HTML('<div class="mobile-settings-section-title">生成细节</div>', container=False)
+                        mobile_num_steps = gr.Slider(
+                            label="生成步数",
+                            minimum=10,
+                            maximum=100,
+                            value=25,
+                            step=1,
+                            elem_id="mobile-num-steps",
+                        )
+                        mobile_seed = gr.Number(
+                            label="种子", value=42, precision=0, elem_id="mobile-seed"
+                        )
+                        mobile_random_seed = gr.Checkbox(
+                            label="每次随机", value=False, elem_id="mobile-random-seed"
+                        )
+                        mobile_quant_mode = gr.Radio(
+                            label="计算精度",
+                            choices=["8-bit（推荐）", "4-bit", "全精�?],
+                            value="8-bit（推荐）",
+                            elem_id="mobile-quant-mode",
+                        )
+
+        with gr.Column(elem_id="mobile-work-screen"):
+            with gr.Row(elem_id="mobile-work-topbar"):
+                mobile_edit_again_btn = gr.Button(
+                    "另题", size="sm", elem_id="mobile-edit-again"
+                )
+                gr.HTML(
+                    """
+                    <div id="mobile-work-brand">
+                      <span class="mobile-work-title">
+                        <strong>UniCalli</strong><small>掌中阅卷</small>
+                      </span>
+                    </div>
+                    """,
+                    container=False,
+                )
+                mobile_download_btn = gr.DownloadButton(
+                    "导出",
+                    value=None,
+                    visible=False,
+                    size="sm",
+                    elem_id="mobile-download-scroll",
+                )
+
+            mobile_stage_html = gr.HTML(
+                value=render_mobile_stage_shell(),
+                elem_id="mobile-stage-host",
+                container=False,
+                padding=False,
+            )
+            mobile_generation_status = gr.Markdown(
+                "长卷待题�?, elem_id="mobile-generation-status"
+            )
+
+        mobile_reroll_target = gr.Textbox(
+            value="", lines=1, elem_id="mobile-reroll-target"
         )
 
     gr.HTML(
@@ -823,11 +1078,23 @@ with gr.Blocks(
         queue=False,
     )
 
+    demo.load(
+        fn=initialize_preferences,
+        inputs=[preferences_state, mobile_author_dropdown],
+        outputs=[
+            mobile_author_dropdown,
+            mobile_favorite_author_btn,
+            mobile_author_tag,
+            mobile_preference_summary,
+        ],
+        queue=False,
+    )
+
     event_bus.change(
         fn=None,
         inputs=[event_bus],
         outputs=None,
-        js="(event) => { window.UniCalli?.applyEvent(event); }",
+        js="(event) => { window.UniCalli?.applyEvent(event); window.UniCalliMobile?.applyEvent(event); }",
         queue=False,
     )
 
@@ -838,10 +1105,24 @@ with gr.Blocks(
         queue=False,
     )
 
+    mobile_text_input.input(
+        fn=preview_text,
+        inputs=[mobile_text_input],
+        outputs=[mobile_draft_board],
+        queue=False,
+    )
+
     author_dropdown.change(
         fn=author_change,
         inputs=[author_dropdown, preferences_state],
         outputs=[font_style, favorite_author_btn, author_tag],
+        queue=False,
+    )
+
+    mobile_author_dropdown.change(
+        fn=author_change,
+        inputs=[mobile_author_dropdown, preferences_state],
+        outputs=[mobile_font_style, mobile_favorite_author_btn, mobile_author_tag],
         queue=False,
     )
 
@@ -853,6 +1134,18 @@ with gr.Blocks(
             font_style,
             favorite_author_btn,
             author_tag,
+        ],
+        queue=False,
+    )
+
+    mobile_favorite_only.change(
+        fn=filter_author_controls,
+        inputs=[mobile_favorite_only, preferences_state, mobile_author_dropdown],
+        outputs=[
+            mobile_author_dropdown,
+            mobile_font_style,
+            mobile_favorite_author_btn,
+            mobile_author_tag,
         ],
         queue=False,
     )
@@ -871,6 +1164,20 @@ with gr.Blocks(
         queue=False,
     )
 
+    mobile_favorite_author_btn.click(
+        fn=toggle_author_favorite,
+        inputs=[mobile_author_dropdown, preferences_state, mobile_favorite_only],
+        outputs=[
+            preferences_state,
+            mobile_preference_summary,
+            mobile_author_dropdown,
+            mobile_font_style,
+            mobile_favorite_author_btn,
+            mobile_author_tag,
+        ],
+        queue=False,
+    )
+
     save_author_tag_btn.click(
         fn=save_author_tag,
         inputs=[author_dropdown, author_tag, preferences_state],
@@ -878,13 +1185,34 @@ with gr.Blocks(
         queue=False,
     )
 
+    mobile_save_author_tag_btn.click(
+        fn=save_author_tag,
+        inputs=[mobile_author_dropdown, mobile_author_tag, preferences_state],
+        outputs=[preferences_state, mobile_preference_summary, mobile_author_tag],
+        queue=False,
+    )
+
     theme_mode.change(
-        fn=update_background_export,
+        fn=update_background_export_pair,
         inputs=[session_id_state, theme_mode],
-        outputs=[download_btn],
+        outputs=[download_btn, mobile_download_btn, mobile_theme_mode],
         js=(
             "(sessionId, mode) => { "
             "window.UniCalli?.setTheme(mode); "
+            "window.UniCalliMobile?.setTheme(mode); "
+            "return [sessionId, mode]; }"
+        ),
+        queue=False,
+    )
+
+    mobile_theme_mode.change(
+        fn=update_background_export_pair,
+        inputs=[session_id_state, mobile_theme_mode],
+        outputs=[download_btn, mobile_download_btn, theme_mode],
+        js=(
+            "(sessionId, mode) => { "
+            "window.UniCalli?.setTheme(mode); "
+            "window.UniCalliMobile?.setTheme(mode); "
             "return [sessionId, mode]; }"
         ),
         queue=False,
@@ -906,8 +1234,24 @@ with gr.Blocks(
         queue=False,
     )
 
+    mobile_open_settings.click(
+        fn=None,
+        js="() => { window.UniCalliMobile?.openSettings(); }",
+        queue=False,
+    )
+    mobile_settings_back.click(
+        fn=None,
+        js="() => { window.UniCalliMobile?.closeSettings(); }",
+        queue=False,
+    )
+    mobile_edit_again_btn.click(
+        fn=None,
+        js="() => { window.UniCalliMobile?.enterCompose(); }",
+        queue=False,
+    )
+
     generate_btn.click(
-        fn=generation_ui_stream,
+        fn=generation_ui_stream_dual,
         inputs=[
             text_input,
             author_dropdown,
@@ -925,6 +1269,9 @@ with gr.Blocks(
             seed_info,
             download_btn,
             session_id_state,
+            mobile_draft_board,
+            mobile_generation_status,
+            mobile_download_btn,
         ],
         show_progress="hidden",
         stream_every=0.12,
@@ -934,8 +1281,39 @@ with gr.Blocks(
         ),
     )
 
+    mobile_generate_btn.click(
+        fn=generation_ui_stream_dual,
+        inputs=[
+            mobile_text_input,
+            mobile_author_dropdown,
+            mobile_font_style,
+            mobile_num_steps,
+            mobile_seed,
+            mobile_random_seed,
+            mobile_quant_mode,
+            mobile_theme_mode,
+        ],
+        outputs=[
+            event_bus,
+            draft_board,
+            generation_status,
+            seed_info,
+            download_btn,
+            session_id_state,
+            mobile_draft_board,
+            mobile_generation_status,
+            mobile_download_btn,
+        ],
+        show_progress="hidden",
+        stream_every=0.12,
+        js=(
+            "(...args) => "
+            "window.UniCalliMobile ? window.UniCalliMobile.beforeGenerate(args) : args"
+        ),
+    )
+
     reroll_target.change(
-        fn=reroll_segment_stream,
+        fn=reroll_segment_stream_dual,
         inputs=[session_id_state, reroll_target],
         outputs=[
             event_bus,
@@ -943,6 +1321,26 @@ with gr.Blocks(
             generation_status,
             seed_info,
             download_btn,
+            mobile_draft_board,
+            mobile_generation_status,
+            mobile_download_btn,
+        ],
+        show_progress="hidden",
+        stream_every=0.12,
+    )
+
+    mobile_reroll_target.change(
+        fn=reroll_segment_stream_dual,
+        inputs=[session_id_state, mobile_reroll_target],
+        outputs=[
+            event_bus,
+            draft_board,
+            generation_status,
+            seed_info,
+            download_btn,
+            mobile_draft_board,
+            mobile_generation_status,
+            mobile_download_btn,
         ],
         show_progress="hidden",
         stream_every=0.12,
@@ -975,64 +1373,18 @@ def _health():
 
 
 # 子路径部署（Tailscale Funnel /unicalli）下的唯一问题是：
-# URL 无尾斜杠时 gradio 相对路径 "./assets/" 会解析到根路径（打到 Funnel
-# 根 → Plane）→ 注入脚本把 /unicalli 301 到 /unicalli/ 即可。
-# 注意：不能改 api_prefix——gradio 后端已从请求正确推断 root（含 /unicalli），
-# 前端 URL = root + api_prefix(/gradio_api) 已正确；注入 api_prefix 会导致
-# root + 注入值 双前缀/畸形 URL（实测 404/405）。
-# 说明：曾经通过 JS 在客户端清除 gradio 6 内联布局变量（--start-left/--start-top）
-# 并用 MutationObserver 持续监听 .composer-main-row 的做法已废弃，原因：
+# URL 无尾斜杠�?gradio 相对路径 "./assets/" 会解析到根路径（打到 Funnel
+# �?�?Plane）→ 注入脚本�?/unicalli 301 �?/unicalli/ 即可�?# 注意：不能改 api_prefix——gradio 后端已从请求正确推断 root（含 /unicalli），
+# 前端 URL = root + api_prefix(/gradio_api) 已正确；注入 api_prefix 会导�?# root + 注入�?双前缀/畸形 URL（实�?404/405）�?# 说明：曾经通过 JS 在客户端清除 gradio 6 内联布局变量�?-start-left/--start-top�?# 并用 MutationObserver 持续监听 .composer-main-row 的做法已废弃，原因：
 #   1) clearInlineLayout() 会写 row.style（display/flexDirection/gap），而该元素本身
 #      带有 composer-main-row 类且正是 Observer 的监听目标（attributeFilter:['style']），
 #      于是每次修正都会重新触发自身回调，形成不会停止的同步自触发循环，
-#      在移动端会持续占满主线程、耗电、甚至卡死页面。
-#   2) 该脚本没有任何视口/媒体查询判断，会在所有设备上无条件把
-#      composer-main-row 强制改成纵向堆叠布局，桌面端也会被误伤。
-#   3) 手机端布局现由 unicalli_mobile.css / unicalli_mobile.js 独立维护；
-#      unicalli_ui.css / unicalli_ui.js 只保留桌面视觉与跨端核心交互。
-#      同一组件不再被多组移动端媒体查询和脚本重复接管。
-_PREFIX_SCRIPT = (
+#      在移动端会持续占满主线程、耗电、甚至卡死页面�?#   2) 该脚本没有任何视�?媒体查询判断，会在所有设备上无条件把
+#      composer-main-row 强制改成纵向堆叠布局，桌面端也会被误伤�?#   3) 手机端使用独立的 Gradio 组件树与 unicalli_mobile.css/js�?#      桌面与手机共享生�?session/event bus，不再通过 fixed overlay �?!important
+#      把桌面组件压缩成手机布局�?_PREFIX_SCRIPT = (
     "<script>(function(){"
     "var p=location.pathname||'';"
     "if(p&&p!=='/'&&p.charAt(p.length-1)!=='/'){location.replace(location.href+'/');}"
-    "var q=location.search||'';"
-    "if(q.indexOf('diag')>-1){"
-    "  function showDiag(){"
-    "    var css=getComputedStyle(document.documentElement);"
-    "    var bar=document.querySelector('.mobile-composer-bar');"
-    "    var ta=document.querySelector('#text-input textarea');"
-    "    var info={};"
-    "    info.w=innerWidth; info.h=innerHeight;"
-    "    info.mq767=matchMedia('(max-width: 767px)').matches;"
-            "    info.hasPseudo=CSS.supports('selector(:has(a))');"
-    "    info.colorMix=CSS.supports('color','color-mix(in srgb, red, blue)');"
-    "    info.backdrop=CSS.supports('backdrop-filter','blur(1px)');"
-    "    info.cssLoaded=!!(css.getPropertyValue('--bronze').trim());"
-    "    info.bar=!!bar;"
-    "    info.barBtns=bar?bar.querySelectorAll('button').length:-1;"
-    "    info.uniCalli=!!window.UniCalli;"
-    "    info.ready=document.readyState;"
-    "    info.taBg=ta?getComputedStyle(ta).backgroundColor:'none';"
-    "    info.taDisplay=ta?getComputedStyle(ta).display:'none';"
-    "    info.bodyClass=document.body.className.slice(0,120);"
-    "    info.ua=navigator.userAgent.slice(0,100);"
-    "    var d=document.getElementById('unicalli-diag');"
-    "    if(d)d.textContent=JSON.stringify(info,null,1);"
-    "  }"
-    "  function addDiag(){"
-    "    var d=document.createElement('div');"
-    "    d.id='unicalli-diag';"
-    "    d.style.cssText='position:fixed;bottom:8px;left:8px;right:8px;z-index:99999;"
-    "      background:rgba(0,0,0,.88);color:#fff;font:10px/1.4 monospace;padding:8px;"
-    "      border-radius:6px;white-space:pre-wrap;pointer-events:none;word-break:break-all;';"
-    "    document.body.appendChild(d);"
-    "    setTimeout(showDiag,3500);"
-    "    window.addEventListener('load',function(){setTimeout(showDiag,6000);});"
-    "    window.addEventListener('resize',function(){setTimeout(showDiag,300);});"
-    "  }"
-    "  if(document.body){addDiag();}"
-    "  else{document.addEventListener('DOMContentLoaded',addDiag);}"
-    "}"
     "})();</script>"
 )
 
@@ -1050,9 +1402,6 @@ class _InjectApiPrefixMiddleware(BaseHTTPMiddleware):
                 text = text.replace("</head>", _PREFIX_SCRIPT + "</head>", 1)
                 payload = text.encode("utf-8")
                 headers = dict(response.headers)
-                # 无缓存头时浏览器会对 HTML（含内联 CSS/JS）做启发式缓存，
-                # 导致手机端加载旧版页面（移动端修复不生效）。强制 no-store。
-                headers["cache-control"] = "no-store"
                 headers["content-length"] = str(len(payload))
                 return Response(content=payload, status_code=200, headers=headers, media_type="text/html")
         return response
@@ -1061,15 +1410,9 @@ class _InjectApiPrefixMiddleware(BaseHTTPMiddleware):
 demo.app.add_middleware(_InjectApiPrefixMiddleware)
 
 
-# uvicorn 直启绕过 launch()，且 gradio 6.3.0 前端不会自动调用 /startup-events。
-# 必须在 FastAPI 事件循环运行后再启动队列 worker：
-# run_startup_events() 内部的 run_coro_in_background() 用 asyncio.get_event_loop()，
-# 若在 uvicorn.run() 之前调用，worker 任务会挂在永不运行的事件循环上，
-# 导致生成任务入队后无人消费、前端永远卡在"模型准备中"。
-# 注意：不能使用 @app.on_event("startup")——gradio 自带的 lifespan
-# （create_lifespan_handler）不调用 router.startup()，on_event 处理器永不触发。
-# 正确做法是包装 demo.app 的 lifespan，在事件循环运行后启动 worker。
-import contextlib
+# uvicorn 直启绕过 launch()，且 gradio 6.3.0 前端不会自动调用 /startup-events�?# 必须�?FastAPI 事件循环运行后再启动队列 worker�?# run_startup_events() 内部�?run_coro_in_background() �?asyncio.get_event_loop()�?# 若在 uvicorn.run() 之前调用，worker 任务会挂在永不运行的事件循环上，
+# 导致生成任务入队后无人消费、前端永远卡�?模型准备�?�?# 注意：不能使�?@app.on_event("startup")——gradio 自带�?lifespan
+# （create_lifespan_handler）不调用 router.startup()，on_event 处理器永不触发�?# 正确做法是包�?demo.app �?lifespan，在事件循环运行后启�?worker�?import contextlib
 
 _old_lifespan = demo.app.router.lifespan_context
 
@@ -1095,3 +1438,5 @@ if __name__ == "__main__":
         port=55630,
         log_level="info",
     )
+
+

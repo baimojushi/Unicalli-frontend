@@ -39,7 +39,7 @@ def render_stage_shell() -> str:
     """Render one permanent stage. JavaScript patches individual segment nodes."""
     return """
     <div class="scroll-stage-shell" data-stage-state="empty"
-         tabindex="0" role="region" aria-label="书法长卷">
+         tabindex="0" role="region" aria-label="书法横向长卷">
       <div class="stage-empty-copy">
         <span class="stage-empty-index">横卷 · 右起左展</span>
         <strong>静候落笔</strong>

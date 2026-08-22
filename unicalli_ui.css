@@ -1209,7 +1209,7 @@ body.unicalli-complete #side-drawers {
   pointer-events: none !important;
 }
 
-/* ---------- tablet / compact desktop ---------- */
+/* ---------- compact desktop / tablet ---------- */
 @media (min-width: 768px) and (max-width: 920px) {
   .unicalli-topbar {
     grid-template-columns: minmax(150px, 1fr) auto;
@@ -1218,36 +1218,17 @@ body.unicalli-complete #side-drawers {
   }
 
   .topbar-balance { display: none; }
-
-  #stage-controls {
-    right: 10px;
-    gap: 4px !important;
-  }
-
-  #stage-controls button {
-    padding-inline: 7px !important;
-    font-size: 9px !important;
-  }
-
-  #theme-mode label {
-    min-width: 42px !important;
-    padding-inline: 6px !important;
-  }
-
-  #composer-dock {
-    bottom: 10px;
-    width: calc(100vw - 20px);
-  }
-
+  #stage-controls { right: 10px; gap: 4px !important; }
+  #stage-controls button { padding-inline: 7px !important; font-size: 9px !important; }
+  #theme-mode label { min-width: 42px !important; padding-inline: 6px !important; }
+  #composer-dock { bottom: 10px; width: calc(100vw - 20px); }
   .composer-main-row { flex-wrap: wrap !important; }
   #text-input { min-width: 100%; flex-basis: 100% !important; }
-
   .selector-stack {
     width: auto !important;
     min-width: 210px !important;
     flex: 1 1 240px !important;
   }
-
   #generate-btn { min-width: 116px !important; }
   #side-drawers { right: 10px; bottom: 224px; }
   :root { --art-height: clamp(190px, 48vh, 450px); }
@@ -1256,14 +1237,12 @@ body.unicalli-complete #side-drawers {
 
 @media (max-height: 760px) and (min-width: 768px) {
   :root { --art-height: clamp(160px, 43vh, 340px); }
-
   #composer-dock {
     gap: 6px !important;
     padding: 9px 12px !important;
     max-height: calc(100vh - 72px);
     overflow-y: auto;
   }
-
   #draft-board { display: none !important; }
   #text-input textarea { height: 52px !important; min-height: 52px !important; }
   .composer-main-row { align-items: center !important; }
@@ -1279,7 +1258,9 @@ body.unicalli-complete #side-drawers {
   }
 }
 
-/* 羊毛毡表面纹理：桌面与手机共用材质层。 */
+/* 羊毛毡表面纹理 — 灰度 fractalNoise 细密纤维（baseFrequency 0.85 + 3 octaves），
+   overlay 混合在 50% 灰处不产生色偏，低透明度只叠加明暗纤维质感，
+   两主题通用、不改变整体颜色 */
 body::after {
   content: "" !important;
   position: fixed !important;
@@ -1291,105 +1272,4 @@ body::after {
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='felt'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' seed='7' stitchTiles='stitch'/><feColorMatrix type='saturate' values='0'/></filter><rect width='100%' height='100%' filter='url(%23felt)'/></svg>") !important;
   background-size: 300px 300px !important;
   background-repeat: repeat !important;
-}
-
-@supports not (color: color-mix(in srgb, red, blue)) {
-  /* 输入控件：覆盖 Gradio 默认深色渲染 */
-  textarea,
-  input[type="text"],
-  input[type="search"],
-  select,
-  .form textarea {
-    color-scheme: light;
-    background: rgba(255, 253, 247, 0.66) !important;
-    color: #191914 !important;
-    border-color: rgba(71, 61, 46, 0.16) !important;
-  }
-  html[data-unicalli-theme="inkstone"] textarea,
-  html[data-unicalli-theme="inkstone"] input[type="text"],
-  html[data-unicalli-theme="inkstone"] input[type="search"],
-  html[data-unicalli-theme="inkstone"] select,
-  html[data-unicalli-theme="inkstone"] .form textarea {
-    background: rgba(255, 244, 220, 0.05) !important;
-    color: #eee6d6 !important;
-    border-color: rgba(194, 163, 107, 0.18) !important;
-  }
-
-  /* 顶栏 */
-  .unicalli-topbar { background: rgba(244, 240, 231, 0.92) !important; }
-  html[data-unicalli-theme="inkstone"] .unicalli-topbar {
-    background: rgba(28, 25, 20, 0.92) !important;
-  }
-
-  /* 主题胶囊 */
-  #theme-mode {
-    background: rgba(244, 240, 231, 0.84) !important;
-    box-shadow: none !important;
-  }
-  html[data-unicalli-theme="inkstone"] #theme-mode {
-    background: rgba(28, 25, 20, 0.84) !important;
-  }
-
-  /* 落笔按钮（黑色磨砂玻璃） */
-  #generate-btn {
-    background: linear-gradient(
-      180deg, rgba(255, 255, 255, 0.07),
-      rgba(255, 255, 255, 0.02) 45%, transparent 62%
-    ), rgba(13, 13, 11, 0.58) !important;
-    border-color: rgba(255, 255, 255, 0.16) !important;
-  }
-
-  /* 底部题写面板与收起/设置栏 */
-  #composer-dock { background: rgba(249, 246, 238, 0.94) !important; }
-  html[data-unicalli-theme="inkstone"] #composer-dock {
-    background: rgba(31, 28, 22, 0.94) !important;
-  }
-  .mobile-composer-bar {
-    background: rgba(249, 246, 238, 0.96) !important;
-    border-bottom-color: rgba(71, 61, 46, 0.10) !important;
-  }
-  html[data-unicalli-theme="inkstone"] .mobile-composer-bar {
-    background: rgba(31, 28, 22, 0.96) !important;
-    border-bottom-color: rgba(194, 163, 107, 0.12) !important;
-  }
-
-  /* 设置面板（side-drawers）与遮罩 */
-  #side-drawers {
-    background: rgba(249, 246, 238, 0.96) !important;
-    border-top-color: rgba(71, 61, 46, 0.12) !important;
-  }
-  html[data-unicalli-theme="inkstone"] #side-drawers {
-    background: rgba(31, 28, 22, 0.96) !important;
-    border-top-color: rgba(194, 163, 107, 0.12) !important;
-  }
-
-  /* 长卷切片与草稿条 */
-  .scroll-segment {
-    background: rgba(250, 247, 239, 0.72) !important;
-    border-color: rgba(71, 61, 46, 0.12) !important;
-  }
-  html[data-unicalli-theme="inkstone"] .scroll-segment {
-    background: rgba(35, 32, 25, 0.72) !important;
-    border-color: rgba(194, 163, 107, 0.14) !important;
-  }
-  #draft-board { border-top-color: rgba(71, 61, 46, 0.10) !important; }
-  html[data-unicalli-theme="inkstone"] #draft-board {
-    border-top-color: rgba(194, 163, 107, 0.12) !important;
-  }
-
-  /* caption 文字与状态 */
-  .caption-text { color: #1a1915 !important; }
-  html[data-unicalli-theme="inkstone"] .caption-text { color: #eee5d4 !important; }
-  .caption-state { color: #8e8879 !important; }
-  html[data-unicalli-theme="inkstone"] .caption-state { color: #938775 !important; }
-  .draft-meta span { color: #8e8879 !important; }
-  html[data-unicalli-theme="inkstone"] .draft-meta span { color: #938775 !important; }
-
-  /* 横向滚动条配色 */
-  .scroll-track::-webkit-scrollbar-thumb {
-    background: rgba(138, 114, 75, 0.30) !important;
-  }
-  html[data-unicalli-theme="inkstone"] .scroll-track::-webkit-scrollbar-thumb {
-    background: rgba(168, 139, 88, 0.30) !important;
-  }
 }

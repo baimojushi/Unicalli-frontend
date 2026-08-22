@@ -1,368 +1,372 @@
 (() => {
-  if (window.UniCalliMobile) return;
+  if (window.UniCalliMobileV1) return;
 
-  const MOBILE_QUERY = "(max-width: 767px)";
-  const media = window.matchMedia(MOBILE_QUERY);
-
+  const root = document.documentElement;
+  const media = window.matchMedia("(max-width: 767px)");
   const state = {
-    composerOpen: true,
-    settingsOpen: false,
-    dockObserver: null,
-    drawerObserver: null,
-    domObserver: null,
-    bodyObserver: null,
-    lastWriting: false,
-    lastComplete: false,
+    mode: "compose",
+    segments: new Map(),
+    completed: new Set(),
+    activeIndex: null,
+    rerollPending: null,
+    inputBound: false,
   };
 
-  const byId = (id) => document.getElementById(id);
-  const body = () => document.body;
-  const root = () => document.documentElement;
-  const active = () => media.matches;
+  const q = (selector) => document.querySelector(selector);
 
-  function syncStageCopy() {
-    const stage = document.querySelector(
-      "#scroll-stage-host .scroll-stage-shell"
-    );
-    if (!stage) return;
-
-    const empty = stage.querySelector(".stage-empty-copy");
-    if (!empty) return;
-
-    const index = empty.querySelector(".stage-empty-index");
-    const title = empty.querySelector("strong");
-    const copy = empty.querySelector("p");
-
-    if (active()) {
-      stage.setAttribute("aria-label", "书法长卷，纵向阅卷");
-      if (index) index.textContent = "掌中长卷 · 纵向阅卷";
-
-      if (stage.dataset.stageState === "empty") {
-        if (title) title.textContent = "静候落笔";
-        if (copy) {
-          copy.textContent =
-            "题写汉字后，墨迹逐段铺展。上下滑动阅卷，每段均可独立重写。";
-        }
-      }
-    } else {
-      stage.setAttribute("aria-label", "书法长卷，横向展卷");
-      if (index) index.textContent = "横卷 · 右起左展";
-
-      if (stage.dataset.stageState === "empty") {
-        if (title) title.textContent = "静候落笔";
-        if (copy) {
-          copy.textContent =
-            "输入汉字后落笔，墨迹将从右向左连续铺展。";
-        }
-      }
-    }
+  function active() {
+    return media.matches;
   }
 
-  function ensureBar() {
-    const dock = byId("composer-dock");
-    if (!dock) return false;
-
-    if (!dock.querySelector(".mobile-composer-bar")) {
-      const bar = document.createElement("div");
-      bar.className = "mobile-composer-bar";
-      bar.innerHTML = `
-        <span class="mobile-composer-title">
-          <strong>题写长卷</strong>
-          <small>内容 · 书家 · 书体</small>
-        </span>
-        <button
-          class="mobile-settings-toggle"
-          type="button"
-          aria-expanded="false"
-          aria-controls="side-drawers"
-        >设置</button>
-        <button
-          class="mobile-composer-toggle"
-          type="button"
-          aria-expanded="true"
-          aria-controls="text-input"
-          aria-label="展开或收起题写面板"
-        ></button>`;
-      dock.prepend(bar);
+  function syncViewportHeight() {
+    if (!active()) {
+      root.style.removeProperty("--m-viewport-height");
+      return;
     }
-
-    return true;
+    const height = Math.round(window.visualViewport?.height || window.innerHeight);
+    root.style.setProperty("--m-viewport-height", `${height}px`);
   }
 
-  function setComposerOpen(open) {
-    state.composerOpen = Boolean(open);
+  function setMode(mode) {
+    state.mode = mode;
     if (!active()) return;
-
-    body().classList.toggle(
-      "unicalli-mobile-composer-collapsed",
-      !state.composerOpen
-    );
-
-    const toggle = document.querySelector(".mobile-composer-toggle");
-    if (toggle) {
-      toggle.setAttribute(
-        "aria-expanded",
-        String(state.composerOpen)
-      );
-    }
-
-    requestAnimationFrame(updateMetrics);
+    root.dataset.unicalliMobileMode = mode;
   }
 
-  function setSettingsOpen(open) {
-    state.settingsOpen = Boolean(open);
-    if (!active()) return;
+  function setTheme(mode) {
+    root.dataset.unicalliTheme = mode === "砚黑" ? "inkstone" : "paper";
+  }
 
-    body().classList.toggle(
-      "unicalli-mobile-settings-open",
-      state.settingsOpen
-    );
+  function enterCompose() {
+    setMode("compose");
+    window.setTimeout(() => q("#mobile-text-input textarea")?.focus(), 80);
+  }
 
-    const toggle = document.querySelector(".mobile-settings-toggle");
-    if (toggle) {
-      toggle.setAttribute(
-        "aria-expanded",
-        String(state.settingsOpen)
-      );
-    }
-
-    requestAnimationFrame(updateMetrics);
+  function openSettings() {
+    setMode("settings");
   }
 
   function closeSettings() {
-    setSettingsOpen(false);
+    setMode("compose");
   }
 
-  function closeSheets() {
-    setSettingsOpen(false);
-    setComposerOpen(false);
+  function beforeGenerate(args) {
+    if (active()) {
+      clearLiveImage();
+      setMode("generating");
+    }
+    return args;
   }
 
-  function visualViewportBottom() {
-    const viewport = window.visualViewport;
-    if (!viewport) return 0;
+  function clearLiveImage() {
+    const live = q(".mobile-live-art");
+    const image = q("#mobile-live-image");
+    if (image) image.removeAttribute("src");
+    if (live) live.dataset.hasImage = "false";
+  }
 
-    return Math.max(
-      0,
-      Math.round(
-        window.innerHeight -
-        viewport.height -
-        viewport.offsetTop
-      )
+  function updateLiveCopy(title, meta) {
+    const titleNode = q("#mobile-generation-title");
+    const metaNode = q("#mobile-generation-meta");
+    if (titleNode && title) titleNode.textContent = title;
+    if (metaNode && meta) metaNode.textContent = meta;
+  }
+
+  function showLiveImage(src) {
+    const live = q(".mobile-live-art");
+    const image = q("#mobile-live-image");
+    if (!live || !image || !src) return;
+    if (image.src !== src) image.src = src;
+    live.dataset.hasImage = "true";
+  }
+
+  function readingTrack() {
+    return q("#mobile-reading-track");
+  }
+
+  function segmentNode(index) {
+    return readingTrack()?.querySelector(
+      `.mobile-sheet[data-segment-index="${Number(index)}"]`
+    ) || null;
+  }
+
+  function ensureSheet(index) {
+    const numeric = Number(index);
+    let sheet = segmentNode(numeric);
+    if (sheet) return sheet;
+
+    const segment = state.segments.get(numeric);
+    const track = readingTrack();
+    if (!segment || !track) return null;
+
+    sheet = document.createElement("article");
+    sheet.className = "mobile-sheet";
+    sheet.dataset.segmentIndex = String(numeric);
+    sheet.innerHTML = `
+      <div class="mobile-sheet-art">
+        <img alt="第 ${numeric + 1} 段书法" draggable="false" />
+      </div>
+      <div class="mobile-sheet-meta">
+        <span class="mobile-sheet-index">${String(numeric + 1).padStart(2, "0")}</span>
+        <strong class="mobile-sheet-text"></strong>
+        <button class="mobile-sheet-reroll" type="button" disabled>重写</button>
+      </div>`;
+
+    const text = sheet.querySelector(".mobile-sheet-text");
+    if (text) text.textContent = segment.display_text || "";
+    const reroll = sheet.querySelector(".mobile-sheet-reroll");
+    if (reroll) {
+      reroll.dataset.rerollIndex = String(numeric);
+      reroll.setAttribute("aria-label", `重写第 ${numeric + 1} 段`);
+    }
+
+    const existing = Array.from(track.querySelectorAll(".mobile-sheet"));
+    const before = existing.find(
+      (node) => Number(node.dataset.segmentIndex) > numeric
     );
+    if (before) track.insertBefore(sheet, before);
+    else track.append(sheet);
+    return sheet;
   }
 
-  function updateMetrics() {
-    if (!active()) {
-      root().style.removeProperty("--mobile-dock-height");
-      root().style.removeProperty("--mobile-settings-height");
-      root().style.removeProperty("--mobile-vv-bottom");
-      root().style.removeProperty("--mobile-reserved-bottom");
+  function completeSheet(index, src) {
+    const sheet = ensureSheet(index);
+    if (!sheet) return;
+    const image = sheet.querySelector("img");
+    if (image && src) image.src = src;
+    const button = sheet.querySelector(".mobile-sheet-reroll");
+    if (button) button.disabled = false;
+    state.completed.add(Number(index));
+  }
+
+  function scrollToSheet(index, behavior = "smooth") {
+    const sheet = segmentNode(index);
+    if (!sheet) return;
+    sheet.scrollIntoView({ behavior, block: "start" });
+  }
+
+  function reset(segments) {
+    state.segments = new Map(
+      (segments || []).map((segment) => [Number(segment.index), segment])
+    );
+    state.completed.clear();
+    state.activeIndex = null;
+    state.rerollPending = null;
+    readingTrack()?.replaceChildren();
+    clearLiveImage();
+    updateLiveCopy("正在备纸", `${state.segments.size || 0} 段待写`);
+    setMode("generating");
+  }
+
+  function setNativeValue(input, value) {
+    if (!input) return;
+    const proto = input instanceof HTMLTextAreaElement
+      ? HTMLTextAreaElement.prototype
+      : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+    if (setter) setter.call(input, value);
+    else input.value = value;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function triggerReroll(index) {
+    const numeric = Number(index);
+    if (!active() || state.rerollPending !== null || !state.completed.has(numeric)) return;
+    const input = q("#mobile-reroll-target input, #mobile-reroll-target textarea");
+    if (!input) return;
+
+    state.rerollPending = numeric;
+    const button = segmentNode(numeric)?.querySelector(".mobile-sheet-reroll");
+    if (button) button.disabled = true;
+    updateLiveCopy(`第 ${numeric + 1} 段`, "准备重写");
+    const oldImage = segmentNode(numeric)?.querySelector("img")?.src;
+    if (oldImage) showLiveImage(oldImage);
+    setMode("generating");
+    setNativeValue(input, `${numeric}:${Date.now()}`);
+  }
+
+  function applyEvent(event) {
+    if (!event || typeof event !== "object") return;
+    const kind = event.kind;
+    const index = Number(event.index);
+
+    if (kind === "reset") {
+      reset(event.segments || []);
       return;
     }
 
-    const dock = byId("composer-dock");
-    const drawer = byId("side-drawers");
-
-    const dockHeight = dock
-      ? Math.ceil(dock.getBoundingClientRect().height)
-      : 0;
-
-    const drawerHeight =
-      state.settingsOpen && drawer
-        ? Math.ceil(drawer.getBoundingClientRect().height) + 8
-        : 0;
-
-    const vvBottom = visualViewportBottom();
-    const reserved = Math.max(
-      72,
-      dockHeight + drawerHeight + vvBottom + 18
-    );
-
-    root().style.setProperty(
-      "--mobile-dock-height",
-      `${dockHeight}px`
-    );
-    root().style.setProperty(
-      "--mobile-settings-height",
-      `${drawerHeight}px`
-    );
-    root().style.setProperty(
-      "--mobile-vv-bottom",
-      `${vvBottom}px`
-    );
-    root().style.setProperty(
-      "--mobile-reserved-bottom",
-      `${reserved}px`
-    );
-  }
-
-  function bindObservers() {
-    const dock = byId("composer-dock");
-    const drawer = byId("side-drawers");
-
-    if (window.ResizeObserver && dock && !state.dockObserver) {
-      state.dockObserver = new ResizeObserver(updateMetrics);
-      state.dockObserver.observe(dock);
+    if (kind === "task_started") {
+      setMode("generating");
+      updateLiveCopy("正在落笔", "墨色开始铺展");
+      return;
     }
 
-    if (window.ResizeObserver && drawer && !state.drawerObserver) {
-      state.drawerObserver = new ResizeObserver(updateMetrics);
-      state.drawerObserver.observe(drawer);
+    if (kind === "segment_started") {
+      state.activeIndex = index;
+      clearLiveImage();
+      const segment = state.segments.get(index);
+      updateLiveCopy(
+        segment?.display_text || `第 ${index + 1} 段`,
+        `第 ${index + 1} / ${state.segments.size} 段 · 候墨`
+      );
+      return;
     }
 
-    if (!state.bodyObserver && body()) {
-      state.bodyObserver = new MutationObserver(() => {
-        if (!active()) return;
-
-        const writing =
-          body().classList.contains("unicalli-writing");
-        const complete =
-          body().classList.contains("unicalli-complete");
-
-        if (
-          (writing && !state.lastWriting) ||
-          (complete && !state.lastComplete)
-        ) {
-          closeSheets();
-        }
-
-        state.lastWriting = writing;
-        state.lastComplete = complete;
-        requestAnimationFrame(updateMetrics);
-      });
-
-      state.bodyObserver.observe(body(), {
-        attributes: true,
-        attributeFilter: ["class"],
-      });
+    if (kind === "preview") {
+      state.activeIndex = index;
+      showLiveImage(event.image);
+      const current = Math.min(Number(event.step || 0) + 1, Number(event.total_steps || 1));
+      updateLiveCopy(
+        state.segments.get(index)?.display_text || `第 ${index + 1} 段`,
+        `显墨 ${current} / ${Number(event.total_steps || 1)}`
+      );
+      return;
     }
 
-    if (!state.domObserver) {
-      state.domObserver = new MutationObserver(() => {
-        if (!active()) return;
+    if (kind === "segment_completed") {
+      state.activeIndex = index;
+      completeSheet(index, event.image);
+      showLiveImage(event.image);
+      updateLiveCopy(
+        state.segments.get(index)?.display_text || `第 ${index + 1} 段`,
+        `第 ${index + 1} 段 · 墨定`
+      );
+      return;
+    }
 
-        if (ensureBar()) {
-          bindObservers();
-          syncStageCopy();
-          requestAnimationFrame(updateMetrics);
-        }
+    if (kind === "task_completed") {
+      state.rerollPending = null;
+      setMode("reading");
+      window.requestAnimationFrame(() => {
+        const track = readingTrack();
+        if (track) track.scrollTop = 0;
       });
+      return;
+    }
 
-      state.domObserver.observe(document.documentElement, {
-        childList: true,
-        subtree: true,
-      });
+    if (kind === "task_error") {
+      state.rerollPending = null;
+      setMode(state.completed.size ? "reading" : "compose");
+      return;
+    }
+
+    if (kind === "reroll_started") {
+      state.rerollPending = index;
+      state.activeIndex = index;
+      updateLiveCopy(`第 ${index + 1} 段`, "重新运笔");
+      setMode("generating");
+      return;
+    }
+
+    if (kind === "reroll_preview") {
+      showLiveImage(event.image);
+      const current = Math.min(Number(event.step || 0) + 1, Number(event.total_steps || 1));
+      updateLiveCopy(`第 ${index + 1} 段`, `重写显墨 ${current} / ${Number(event.total_steps || 1)}`);
+      return;
+    }
+
+    if (kind === "reroll_completed") {
+      completeSheet(index, event.image);
+      state.rerollPending = null;
+      setMode("reading");
+      window.requestAnimationFrame(() => scrollToSheet(index, "auto"));
+      return;
+    }
+
+    if (kind === "reroll_error") {
+      const button = segmentNode(index)?.querySelector(".mobile-sheet-reroll");
+      if (button) button.disabled = false;
+      state.rerollPending = null;
+      setMode("reading");
+      window.requestAnimationFrame(() => scrollToSheet(index, "auto"));
     }
   }
+
+  function isHanCharacter(character) {
+    try {
+      return /^\p{Script=Han}$/u.test(character);
+    } catch (_) {
+      const code = character.codePointAt(0) || 0;
+      return (
+        (code >= 0x3400 && code <= 0x4dbf) ||
+        (code >= 0x4e00 && code <= 0x9fff) ||
+        (code >= 0xf900 && code <= 0xfaff) ||
+        (code >= 0x20000 && code <= 0x2fa1f) ||
+        (code >= 0x30000 && code <= 0x323af)
+      );
+    }
+  }
+
+  function hanOnly(value) {
+    return Array.from(String(value || "")).filter(isHanCharacter).join("");
+  }
+
+  function bindTextInputFilter() {
+    if (state.inputBound) return;
+    const input = q("#mobile-text-input textarea");
+    if (!input) {
+      window.setTimeout(bindTextInputFilter, 100);
+      return;
+    }
+
+    state.inputBound = true;
+    let composing = false;
+    let filtering = false;
+
+    input.addEventListener("compositionstart", () => { composing = true; });
+    input.addEventListener("compositionend", () => {
+      composing = false;
+      const clean = hanOnly(input.value);
+      if (clean !== input.value) setNativeValue(input, clean);
+    });
+    input.addEventListener("beforeinput", (event) => {
+      if (composing || !event.data || !event.inputType.startsWith("insert")) return;
+      if (hanOnly(event.data) !== event.data) event.preventDefault();
+    });
+    input.addEventListener("input", () => {
+      if (composing || filtering) return;
+      const clean = hanOnly(input.value);
+      if (clean === input.value) return;
+      filtering = true;
+      setNativeValue(input, clean);
+      filtering = false;
+    });
+  }
+
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest(".mobile-sheet-reroll");
+    if (!button) return;
+    event.preventDefault();
+    const index = Number(button.dataset.rerollIndex);
+    if (Number.isFinite(index)) triggerReroll(index);
+  }, true);
 
   function activate() {
-    if (!body()) return;
-
-    if (!active()) {
-      body().classList.remove(
-        "unicalli-mobile-ui",
-        "unicalli-mobile-composer-collapsed",
-        "unicalli-mobile-settings-open"
-      );
-      updateMetrics();
-      syncStageCopy();
-      return;
+    if (active()) {
+      syncViewportHeight();
+      root.dataset.unicalliMobileMode = state.mode;
+      bindTextInputFilter();
+    } else {
+      root.removeAttribute("data-unicalli-mobile-mode");
     }
-
-    body().classList.add("unicalli-mobile-ui");
-    ensureBar();
-    bindObservers();
-    setComposerOpen(state.composerOpen);
-    setSettingsOpen(state.settingsOpen);
-    syncStageCopy();
-    requestAnimationFrame(updateMetrics);
   }
 
-  document.addEventListener(
-    "click",
-    (event) => {
-      if (!active()) return;
+  if (media.addEventListener) media.addEventListener("change", activate);
+  else media.addListener?.(activate);
+  window.addEventListener("resize", syncViewportHeight, { passive: true });
+  window.visualViewport?.addEventListener("resize", syncViewportHeight, { passive: true });
 
-      const composerToggle = event.target.closest(
-        ".mobile-composer-toggle"
-      );
-
-      if (composerToggle) {
-        event.preventDefault();
-        setSettingsOpen(false);
-        setComposerOpen(!state.composerOpen);
-        return;
-      }
-
-      const settingsToggle = event.target.closest(
-        ".mobile-settings-toggle"
-      );
-
-      if (settingsToggle) {
-        event.preventDefault();
-        const next = !state.settingsOpen;
-        setComposerOpen(false);
-        setSettingsOpen(next);
-        return;
-      }
-
-      if (event.target.closest("#edit-again-btn")) {
-        setSettingsOpen(false);
-        setComposerOpen(true);
-      }
-    },
-    true
-  );
-
-  document.addEventListener("keydown", (event) => {
-    if (!active() || event.key !== "Escape") return;
-
-    if (state.settingsOpen) {
-      setSettingsOpen(false);
-    } else if (state.composerOpen) {
-      setComposerOpen(false);
-    }
-  });
-
-  if (media.addEventListener) {
-    media.addEventListener("change", activate);
-  } else if (media.addListener) {
-    media.addListener(activate);
-  }
-
-  window.addEventListener("resize", activate, {
-    passive: true,
-  });
-
-  window.addEventListener(
-    "orientationchange",
-    () => window.setTimeout(activate, 80),
-    { passive: true }
-  );
-
-  window.visualViewport?.addEventListener(
-    "resize",
-    updateMetrics,
-    { passive: true }
-  );
-
-  window.visualViewport?.addEventListener(
-    "scroll",
-    updateMetrics,
-    { passive: true }
-  );
-
-  window.UniCalliMobile = {
-    activate,
+  window.UniCalliMobile = window.UniCalliMobileV1 = {
+    applyEvent,
+    beforeGenerate,
+    enterCompose,
+    openSettings,
     closeSettings,
-    closeSheets,
-    setComposerOpen,
-    setSettingsOpen,
-    updateMetrics,
+    setTheme,
+    triggerReroll,
   };
 
   activate();
   window.setTimeout(activate, 120);
-  window.setTimeout(activate, 600);
 })();

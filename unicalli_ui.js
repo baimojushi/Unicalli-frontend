@@ -25,10 +25,10 @@
   const root = () => document.documentElement;
   const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
 
-  const MOBILE_QUERY = "(max-width: 767px)";
-
+  // The desktop stage remains horizontal at every viewport.
+  // Phones use unicalli_mobile.js and a separate DOM/component tree.
   function isMobileLayout() {
-    return window.matchMedia(MOBILE_QUERY).matches;
+    return false;
   }
 
   function findStage() {
@@ -182,25 +182,11 @@
 
   function insertSegmentInOrder(article, index) {
     const children = Array.from(state.track?.children || []);
-    const targetIndex = Number(index);
-    const before = children.find((node) => {
-      const nodeIndex = Number(node.dataset.segmentIndex);
-      return isMobileLayout() ? nodeIndex > targetIndex : nodeIndex < targetIndex;
-    });
+    const before = children.find(
+      (node) => Number(node.dataset.segmentIndex) < Number(index)
+    );
     if (before) state.track.insertBefore(article, before);
     else state.track.append(article);
-  }
-
-  function syncSegmentOrderForLayout() {
-    if (!state.track) return;
-    const nodes = Array.from(state.track.querySelectorAll(".scroll-segment"));
-    nodes.sort((left, right) => {
-      const a = Number(left.dataset.segmentIndex);
-      const b = Number(right.dataset.segmentIndex);
-      return isMobileLayout() ? a - b : b - a;
-    });
-    nodes.forEach((node) => state.track.append(node));
-    requestCaptionDepth();
   }
 
   function ensureSegment(index) {
@@ -249,11 +235,7 @@
     state.lastRerollIndex = null;
     state.rerollPendingIndex = null;
     setManualMode(false);
-    if (isMobileLayout()) {
-      state.stage.scrollTop = 0;
-    } else {
-      state.stage.scrollLeft = state.stage.scrollWidth;
-    }
+    state.stage.scrollLeft = state.stage.scrollWidth;
   }
 
   const SEGMENT_STATE_CLASSES = [
@@ -558,42 +540,21 @@
 
     stage.addEventListener("keydown", (event) => {
       wakeUi();
-      const mobile = isMobileLayout();
-      const amount = Math.max(
-        160,
-        (mobile ? stage.clientHeight : stage.clientWidth) * 0.36
-      );
-
-      if (mobile && event.key === "ArrowUp") {
-        stage.scrollBy({ top: -amount, behavior: "smooth" });
-        setManualMode(true);
-        event.preventDefault();
-      } else if (mobile && event.key === "ArrowDown") {
-        stage.scrollBy({ top: amount, behavior: "smooth" });
-        setManualMode(true);
-        event.preventDefault();
-      } else if (!mobile && event.key === "ArrowLeft") {
+      const amount = Math.max(160, stage.clientWidth * 0.36);
+      if (event.key === "ArrowLeft") {
         stage.scrollBy({ left: -amount, behavior: "smooth" });
         setManualMode(true);
         event.preventDefault();
-      } else if (!mobile && event.key === "ArrowRight") {
+      } else if (event.key === "ArrowRight") {
         stage.scrollBy({ left: amount, behavior: "smooth" });
         setManualMode(true);
         event.preventDefault();
       } else if (event.key === "Home") {
-        stage.scrollTo(
-          mobile
-            ? { top: 0, behavior: "smooth" }
-            : { left: 0, behavior: "smooth" }
-        );
+        stage.scrollTo({ left: 0, behavior: "smooth" });
         setManualMode(true);
         event.preventDefault();
       } else if (event.key === "End") {
-        stage.scrollTo(
-          mobile
-            ? { top: stage.scrollHeight, behavior: "smooth" }
-            : { left: stage.scrollWidth, behavior: "smooth" }
-        );
+        stage.scrollTo({ left: stage.scrollWidth, behavior: "smooth" });
         setManualMode(true);
         event.preventDefault();
       }
@@ -760,21 +721,22 @@
 
   document.addEventListener("click", (event) => {
     wakeUi();
+
     const rerollButton = event.target.closest(".segment-reroll");
-    if (!rerollButton) return;
-    event.preventDefault();
-    event.stopPropagation();
-    const index = Number(rerollButton.dataset.rerollIndex);
-    if (Number.isFinite(index)) triggerReroll(index);
+    if (rerollButton) {
+      event.preventDefault();
+      event.stopPropagation();
+      const index = Number(rerollButton.dataset.rerollIndex);
+      if (Number.isFinite(index)) triggerReroll(index);
+      return;
+    }
+
   }, true);
 
   ["pointermove", "touchstart", "keydown"].forEach((eventName) => {
     document.addEventListener(eventName, wakeUi, { passive: true });
   });
-  window.addEventListener("resize", () => {
-    syncSegmentOrderForLayout();
-    requestCaptionDepth();
-  }, { passive: true });
+  window.addEventListener("resize", requestCaptionDepth, { passive: true });
   document.addEventListener("fullscreenchange", wakeUi);
 
   window.UniCalli = window.UniCalliV4 = {
